@@ -11,7 +11,7 @@ from Orange.widgets import gui
 from Orange.widgets.widget import Output
 
 from orangecontrib.text.corpus import Corpus
-from amcat.amcat_orange_api import AmcatCredentials, AmcatOrangeAPI
+from amcat_orange.amcat_orange_api import AmcatCredentials, AmcatOrangeAPI
 from orangecontrib.text.widgets.utils import CheckListLayout, QueryBox, DatePickerInterval, gui_require, asynchronous
 
 class OWAmcat(OWWidget):
@@ -91,12 +91,9 @@ class OWAmcat(OWWidget):
     want_main_area = False
     resizing_enabled = False
 
-    project = Setting([])
-    articleset = Setting([])
-    query = Setting(None)
-    recent_project = Setting([])
-    recent_articleset = Setting([])
-    recent_queries = Setting([])
+    project = Setting('')
+    articleset = Setting('')
+    query = Setting('')
     date_from = Setting(date(1900,1,1))
     date_to = Setting(datetime.now().date())
     attributes = [feat.name for feat, _ in AmcatOrangeAPI.metas if
@@ -108,8 +105,8 @@ class OWAmcat(OWWidget):
 
     class Error(OWWidget.Error):
         no_api = Msg('Please provide valid login information.')
-        no_project = Msg('Please provide a project id.')
-        no_articleset = Msg('Please provide a articleset id.')
+        no_project = Msg('Please provide a valid (int) project id.')
+        no_articleset = Msg('Please provide a valid (int) articleset id.')
 
     def __init__(self):
         super().__init__()
@@ -126,16 +123,9 @@ class OWAmcat(OWWidget):
 
         # Query
         query_box = gui.widgetBox(self.controlArea, 'Query', addSpace=True)
-        #self.query_box = QueryBox(query_box, self, self.recent_queries,
-        ##                          callback=self.new_query_input)
-        #self.project_box = QueryBox(query_box, self, self.recent_project,
-        #                          callback=self.new_query_input)
-
-     
-        # Project and articleset
         aset_box = gui.hBox(query_box)
-        project_edit = gui.lineEdit(aset_box, self, 'project', label='Project', valueType=int, controlWidth=175)
-        set_edit = gui.lineEdit(aset_box, self, 'articleset', label='Articleset', valueType=int, controlWidth=175)
+        project_edit = gui.lineEdit(aset_box, self, 'project', label='Project: ',  orientation=1, valueType=str)
+        set_edit = gui.lineEdit(aset_box, self, 'articleset', label='Articleset: ', orientation=1, valueType=str)
         queryset_box = gui.hBox(query_box)
         query_edit = gui.lineEdit(queryset_box, self, 'query', label='Query', valueType=str, controlWidth=350)
   
@@ -185,6 +175,8 @@ class OWAmcat(OWWidget):
     @gui_require('articleset', 'no_articleset')
 
     def run_search(self):
+        if not str(self.project).isdigit(): self.project = ''
+        if not str(self.articleset).isdigit(): self.articleset = ''
         self.search()
 
     @asynchronous

@@ -1,0 +1,16 @@
+Metadata-Version: 1.0
+Name: Orange3-amcat
+Version: 0.1.2
+Summary: Provides access to the API of an AmCAT server and various content-analysis tools
+Home-page: https://github.com/amcat/Orange3-amcat
+Author: Kasper Welbers and Wouter van Atteveldt
+Author-email: k.welbers@vu.nl
+License: UNKNOWN
+Description-Content-Type: UNKNOWN
+Description: Orange3 AmCAT
+        ============
+        
+        Orange add-on for the Amsterdam Content Analysis Toolkit (AmCAT). Provides access to the API of an AmCAT server, and adds tools for automatic content analysis.
+        
+Keywords: orange3-amcat,orange3 add-on
+Platform: UNKNOWN

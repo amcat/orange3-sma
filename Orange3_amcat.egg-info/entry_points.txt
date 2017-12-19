@@ -1,0 +1,3 @@
+[orange.widgets]
+AmCAT = amcat_orange.widgets
+

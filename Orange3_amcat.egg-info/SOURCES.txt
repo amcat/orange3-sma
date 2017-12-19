@@ -1,0 +1,12 @@
+README.md
+setup.py
+Orange3_amcat.egg-info/PKG-INFO
+Orange3_amcat.egg-info/SOURCES.txt
+Orange3_amcat.egg-info/dependency_links.txt
+Orange3_amcat.egg-info/entry_points.txt
+Orange3_amcat.egg-info/requires.txt
+Orange3_amcat.egg-info/top_level.txt
+amcat_orange/__init__.py
+amcat_orange/amcat_orange_api.py
+amcat_orange/widgets/OWAmcat.py
+amcat_orange/widgets/__init__.py
