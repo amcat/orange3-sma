@@ -1,4 +1,7 @@
+LICENCE
 README.md
+README.pypi
+requirements.txt
 setup.py
 Orange3_amcat.egg-info/PKG-INFO
 Orange3_amcat.egg-info/SOURCES.txt
@@ -8,5 +11,12 @@ Orange3_amcat.egg-info/requires.txt
 Orange3_amcat.egg-info/top_level.txt
 amcat_orange/__init__.py
 amcat_orange/amcat_orange_api.py
+amcat_orange/facebook_orange_api.py
+amcat_orange/__pycache__/__init__.cpython-35.pyc
+amcat_orange/__pycache__/amcat_orange_api.cpython-35.pyc
 amcat_orange/widgets/OWAmcat.py
+amcat_orange/widgets/OWFacebook.py
 amcat_orange/widgets/__init__.py
+amcat_orange/widgets/__pycache__/OWAmcat.cpython-35.pyc
+amcat_orange/widgets/__pycache__/__init__.cpython-35.pyc
+amcat_orange/widgets/icons/amcat-logo.svg

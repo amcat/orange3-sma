@@ -1,0 +1,181 @@
+import argparse, sys, os
+import requests, json, math
+import collections, csv, time
+from datetime import datetime, timedelta
+
+from Orange import data
+from orangecontrib.text.corpus import Corpus
+
+BASE_URL = 'https://graph.facebook.com'
+
+class FacebookCredentials:
+    """ The Facebook API credentials. """
+    def __init__(self, token = ''):
+        self.token = token
+            
+    @property
+    def valid(self):
+        ## this should be replaced by a proper check of the token
+        return not self.token == ''
+
+    def __eq__(self, other):
+        return self.token == other.token
+
+
+class FacebookOrangeAPI():
+    attributes = []
+    class_vars = []
+    metas = [(data.StringVariable('Message'), lambda doc: doc['status_message']),
+             (data.StringVariable('From'), lambda doc: doc['from_name']),
+             (data.StringVariable('From ID'), lambda doc: doc['from_id']),
+             (data.StringVariable('Status ID'), lambda doc: doc['status_id']),
+             (data.StringVariable('Status type'), lambda doc: doc['status_type']),
+             (data.StringVariable('Status link'), lambda doc: doc['status_link']),
+             (data.StringVariable('like'), lambda doc: doc['like']),
+             (data.StringVariable('love'), lambda doc: doc['love']),
+             (data.StringVariable('haha'), lambda doc: doc['haha']),
+             (data.StringVariable('wow'), lambda doc: doc['wow']),
+             (data.StringVariable('sad'), lambda doc: doc['sad']),
+             (data.StringVariable('angry'), lambda doc: doc['angry']),
+             (data.StringVariable('comments'), lambda doc: doc['comments']),
+             (data.StringVariable('shares'), lambda doc: doc['shares']),
+             (data.TimeVariable('Publication Date'), lambda doc: doc['status_published']),
+             (data.TimeVariable('Publication Date UTC'), lambda doc: doc['status_published_utc'])]
+    text_features = [metas[0][0]]  
+    title_indices = [-1]           
+
+    def __init__(self, credentials, on_progress=None, should_break=None):
+        self.utc_datecor = datetime.utcnow() - datetime.now() 
+        self.pages = 0
+        self.credentials = credentials
+        self.on_progress = on_progress or (lambda x, y: None)
+        self.should_break = should_break or (lambda: False)
+        self.results = []
+
+    def buildUrl(self, node, version='v2.11'):
+        return BASE_URL + '/' + version + '/' + node  
+
+    def getData(self, url, params=None, verify_key=None):
+        for attempt in range(1,6):
+            try:
+                headers = {'Authorization': 'Bearer ' + self.credentials.token}
+                p = requests.get(url, params=params, headers=headers)
+                data = json.loads(p.text)
+                if verify_key is not None: test = data[verify_key]
+                return data
+            except:
+                print('Could not get data on attempt %s: %s' % (attempt, url))
+                time.sleep(attempt*3)
+                attempt += 1
+        print('total failure...')
+        sys.exit()
+
+
+    def localToUtc(self, date):
+        return date + self.utc_datecor
+
+    def utcToLocal(self, date):
+        return date - self.utc_datecor
+ 
+    def processStatus(self, status, engagement=True):
+        d = {}
+        d['status_id'] = status['id']      
+        d['from_id'] = status['from']['id']
+        d['from_name'] = status['from']['name']        
+        d['status_message'] = '' if 'message' not in status.keys() else status['message']
+        d['status_type'] = status['type']
+        d['link_name'] = '' if 'name' not in status.keys() else status['name']        
+
+        status_published = datetime.strptime(status['created_time'],'%Y-%m-%dT%H:%M:%S+0000')
+        d['status_published_utc'] = status_published
+        d['status_published'] = self.utcToLocal(status_published)
+        d['status_link'] = '' if 'link' not in status.keys() else status['link']
+
+        for score in ['like','love','haha','wow','sad','angry','comments']:
+            d[score] = status[score]['summary']['total_count'] if engagement else ''
+        d['shares'] = status['shares']['count'] if 'shares' in status.keys() else ''   
+
+        return d  
+                               
+    def fieldString(self, engagement=True):
+        field_string = 'message,from,link,created_time,type,name,id'
+        
+        if engagement:
+            field_string += ',' + 'comments.limit(0).summary(true),shares.limit(0).summary(true)'
+            for r in ['like','love','haha','wow','sad','angry']:
+                field_string += ',' + 'reactions.type({}).limit(0).summary(true).as({})'.format(r.upper(), r.lower())
+        return field_string
+        
+
+    def getStatuses(self, page_id, mode='posts', since=None, until=None, engagement=True, comments=True):
+        node = page_id + '/' + mode + '/'  ## mode can be "posts" (posts by page), "feed" (all posts on page) and "tagged" (all public posts in which page is tagged
+        url = self.buildUrl(node)
+
+        params = {}
+        params['fields'] = self.fieldString(engagement)
+        params['limit'] = 100
+        
+        if since is not None: params['since'] = (self.localToUtc(since)).strftime('%Y-%m-%dT%H:%M:%S') 
+        if until is not None: params['until'] = (self.localToUtc(until)).strftime('%Y-%m-%dT%H:%M:%S')
+        while True:
+            statuses = self.getData(url, params=params)
+            if not 'data' in statuses: break
+
+            proc_statuses = [self.processStatus(s, engagement) for s in statuses['data']]            
+            yield proc_statuses            
+
+            if not 'paging' in statuses.keys(): break
+            if not 'next' in statuses['paging'].keys(): break
+            url = statuses['paging']['next']
+
+    def getComments(self, post_ids):
+        None
+              
+    def _search(self, page_ids, mode, since, until):
+        since = since.strftime('%Y-%m-%d')
+        until = until.strftime('%Y-%m-%d')
+        since = datetime.strptime(since, '%Y-%m-%d')
+        until = datetime.strptime(until + 'T23:59:59', '%Y-%m-%dT%H:%M:%S')
+        total_sec = float((until - since).total_seconds())
+        n_pages = len(page_ids)
+        progress_pct = 1 / float(n_pages)
+        
+        for page_i in range(0,n_pages):    
+            page_id = page_ids[page_i]
+            page_progress = progress_pct * page_i 
+            for d in self.getStatuses(page_id, mode, since, until):
+                if self.should_break():
+                    break
+                earliest_date = d[-1]['status_published']
+                sec_to_go = (until - earliest_date).total_seconds()
+                date_progress = ((sec_to_go / total_sec) * progress_pct)
+                progress = math.ceil((page_progress + date_progress)*100)
+                self.on_progress(progress, 100)
+                for doc in d:
+                    yield doc
+
+    def search(self, page_ids, mode='posts', since= datetime.now() - timedelta(10), until=datetime.now(), max_documents=None, accumulate=False):
+        if not accumulate:
+            self.results = []
+        
+        n = 0
+        for doc in self._search(page_ids, mode, since, until):
+            n += 1  
+            doc['status_published'] = doc['status_published'].strftime('%Y-%m-%dT%H:%M:%S')
+            doc['status_published_utc'] = doc['status_published_utc'].strftime('%Y-%m-%dT%H:%M:%S')
+            self.results.append(doc)
+            if max_documents:
+                if n > max_documents:
+                    break
+            
+ 
+        c = Corpus.from_documents(self.results, 'Facebook', self.attributes, self.class_vars, self.metas, self.title_indices)
+        c.text_features = self.text_features
+        return c
+
+if __name__ == '__main__':
+    access_token  = '454870931379640|0bca7149855f3867ee4d16f3757a95d7'
+    cred = FacebookCredentials(access_token)
+    f = FacebookOrangeAPI(cred)
+    for a in f.search(['volkskrant']):
+        None   
