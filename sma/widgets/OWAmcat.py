@@ -11,18 +11,20 @@ from Orange.widgets import gui
 from Orange.widgets.widget import Output
 
 from orangecontrib.text.corpus import Corpus
-from amcat_orange.facebook_orange_api import FacebookCredentials, FacebookOrangeAPI
+from sma.amcat_orange_api import AmcatCredentials, AmcatOrangeAPI
 from orangecontrib.text.widgets.utils import CheckListLayout, QueryBox, DatePickerInterval, gui_require, asynchronous
 
-class OWFacebook(OWWidget):
+class OWAmcat(OWWidget):
     class CredentialsDialog(OWWidget):
-        name = 'The Facebook Credentials'
+        name = 'The AmCAT Credentials'
         want_main_area = False
         resizing_enabled = False
-        cm = CredentialManager('Facebook orange')
-        app_id_input = ''
-        app_secret_input = ''
-        
+        cm = CredentialManager('AmCAT orange')
+        host_input = 'https://amcat.nl'
+        user_input = ''
+        passwd_input = ''
+        token_input = ''
+
         class Error(OWWidget.Error):
             invalid_credentials = Msg('These credentials are invalid.')
 
@@ -33,27 +35,36 @@ class OWFacebook(OWWidget):
 
             form = QFormLayout()
             form.setContentsMargins(5, 5, 5, 5)
-            self.app_id_edit = gui.lineEdit(self, self, 'app_id_input', controlWidth=350)           
-            self.app_secret_edit = gui.lineEdit(self, self, 'app_secret_input', controlWidth=350)           
-            form.addRow('App ID:', self.app_id_edit)  
-            form.addRow('App secret:', self.app_secret_edit)  
+            self.host_edit = gui.lineEdit(self, self, 'host_input', controlWidth=350)
+            self.user_edit = gui.lineEdit(self, self, 'user_input', controlWidth=350)
+            self.passwd_edit = gui.lineEdit(self, self, 'passwd_input', controlWidth=350)
+            self.passwd_edit.setEchoMode(QLineEdit.Password)
+            self.token_edit = gui.lineEdit(self, self, 'token_input', controlWidth=350)
+            form.addRow('Host:', self.host_edit)
+            form.addRow('username:', self.user_edit)
+            form.addRow('password:', self.passwd_edit)            
+            form.addRow('token:', self.token_edit)  
+          
             self.controlArea.layout().addLayout(form)
-            self.submit_button = gui.button(self.controlArea, self, 'Connect', self.accept)
+            
+            #token_box = gui.hBox(self.controlArea, 'Token')
+            #self.token_edit = gui.label(token_box, self, '%(token_input)s')
+
+            self.submit_button = gui.button(self.controlArea, self, 'request new token', self.accept)
 
             self.load_credentials()
 
         def load_credentials(self):
             if self.cm.token:
-                token = self.cm.token.split('|')
-                self.app_id_input = token[0]
-                self.app_secret_input = token[1]
+                self.host_input, self.user_input, self.token_input = self.cm.token.split('\n')   
             
         def save_credentials(self):
-            self.cm.token = self.app_id_input + '|' + self.app_secret_input
+            self.cm.token = '{}\n{}\n{}'.format(self.host_input, self.user_input, self.token_input)
             
         def check_credentials(self, drop_token=True):
-            token = self.app_id_input + '|' + self.app_secret_input
-            api = FacebookCredentials(token)
+            if drop_token: self.token_input = ''
+            api = AmcatCredentials(self.host_input, self.user_input, self.passwd_input, self.token_input)
+            self.passwd_input = ''
             self.token_input = api.token
             self.save_credentials()
             if not api.valid: api = None
@@ -69,9 +80,9 @@ class OWFacebook(OWWidget):
             elif not silent:
                 self.Error.invalid_credentials()
 
-    name = 'Facebook'
-    description = 'Fetch articles from The Facebook Graph API.'
-    icon = 'icons/facebook-logo.svg'
+    name = 'AmCAT'
+    description = 'Fetch articles from The AmCAT API.'
+    icon = 'icons/amcat-logo.svg'
     priority = 10
 
     class Outputs:
@@ -80,19 +91,23 @@ class OWFacebook(OWWidget):
     want_main_area = False
     resizing_enabled = False
 
-    page_ids = Setting(None)
-    date_from = Setting(datetime.now().date() - timedelta(30))
+    project = Setting('')
+    articleset = Setting('')
+    query = Setting('')
+    date_from = Setting(date(1900,1,1))
     date_to = Setting(datetime.now().date())
-    attributes = [feat.name for feat, _ in FacebookOrangeAPI.metas if
+    attributes = [feat.name for feat, _ in AmcatOrangeAPI.metas if
                   isinstance(feat, StringVariable)]
-    text_includes = Setting([feat.name for feat in FacebookOrangeAPI.text_features])
+    text_includes = Setting([feat.name for feat in AmcatOrangeAPI.text_features])
 
     class Warning(OWWidget.Warning):
         no_text_fields = Msg('Text features are inferred when none are selected.')
 
     class Error(OWWidget.Error):
         no_api = Msg('Please provide valid login information.')
-        
+        no_project = Msg('Please provide a valid (int) project id.')
+        no_articleset = Msg('Please provide a valid (int) articleset id.')
+
     def __init__(self):
         super().__init__()
         self.corpus = None
@@ -102,14 +117,17 @@ class OWFacebook(OWWidget):
         # API token
         self.api_dlg = self.CredentialsDialog(self)
         self.api_dlg.accept(silent=True)
-        gui.button(self.controlArea, self, 'Facebook login',
+        gui.button(self.controlArea, self, 'AmCAT login',
                    callback=self.api_dlg.exec_,
                    focusPolicy=Qt.NoFocus)
 
         # Query
         query_box = gui.widgetBox(self.controlArea, 'Query', addSpace=True)
+        aset_box = gui.hBox(query_box)
+        project_edit = gui.lineEdit(aset_box, self, 'project', label='Project: ',  orientation=1, valueType=str)
+        set_edit = gui.lineEdit(aset_box, self, 'articleset', label='Articleset: ', orientation=1, valueType=str)
         queryset_box = gui.hBox(query_box)
-        page_ids_edit = gui.lineEdit(queryset_box, self, 'page_ids', label='Page ids', valueType=str, controlWidth=350)
+        query_edit = gui.lineEdit(queryset_box, self, 'query', label='Query', valueType=str, controlWidth=350)
   
 
         # Year box
@@ -138,7 +156,7 @@ class OWFacebook(OWWidget):
 
     def update_api(self, api):
         self.Error.no_api.clear()
-        self.api = FacebookOrangeAPI(api, on_progress=self.progress_with_info,
+        self.api = AmcatOrangeAPI(api, on_progress=self.progress_with_info,
                                        should_break=self.search.should_break)
 
     def new_query_input(self):
@@ -149,18 +167,21 @@ class OWFacebook(OWWidget):
         if self.search.running:
             self.search.stop()
         else:
+            #self.query_box.synchronize(silent=True)
             self.run_search()
 
     @gui_require('api', 'no_api')
-    
+    @gui_require('project', 'no_project')
+    @gui_require('articleset', 'no_articleset')
+
     def run_search(self):
+        if not str(self.project).isdigit(): self.project = ''
+        if not str(self.articleset).isdigit(): self.articleset = ''
         self.search()
 
     @asynchronous
     def search(self):
-        page_ids = self.page_ids.replace(',', ' ').replace(';', ' ')
-        page_ids = [page_id for page_id in page_ids.split(' ') if not page_id == '']
-        return self.api.search(page_ids, 'posts', self.date_from, self.date_to)
+        return self.api.search(self.project, self.articleset, self.query, self.date_from, self.date_to)
 
     @search.callback(should_raise=False)
     def progress_with_info(self, n_retrieved, n_all):
@@ -169,6 +190,9 @@ class OWFacebook(OWWidget):
 
     @search.on_start
     def on_start(self):
+        self.Error.no_project.clear()
+        self.Error.no_articleset.clear()
+
         self.progressBarInit(None)
         self.search_button.setText('Stop')
         self.Outputs.corpus.send(None)
@@ -192,7 +216,9 @@ class OWFacebook(OWWidget):
 
     def send_report(self):
         self.report_items([
-            ('Page IDs', self.page_ids),
+            ('Project', self.project),
+            ('Articleset', self.articleset),
+            ('Query', self.query),
             ('Date from', self.date_from),
             ('Date to', self.date_to),
             ('Text includes', ', '.join(self.text_includes)),
@@ -202,7 +228,7 @@ class OWFacebook(OWWidget):
 
 if __name__ == '__main__':
     app = QApplication([])
-    widget = OWFacebook()
+    widget = OWAmcat()
     widget.show()
     app.exec()
     widget.saveSettings()

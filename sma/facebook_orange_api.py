@@ -55,21 +55,18 @@ class FacebookOrangeAPI():
     def buildUrl(self, node, version='v2.11'):
         return BASE_URL + '/' + version + '/' + node  
 
-    def getData(self, url, params=None, verify_key=None):
-        for attempt in range(1,6):
+    def getData(self, url, params=None):
+        while True:
+            if self.should_break():
+                    break
             try:
                 headers = {'Authorization': 'Bearer ' + self.credentials.token}
                 p = requests.get(url, params=params, headers=headers)
                 data = json.loads(p.text)
-                if verify_key is not None: test = data[verify_key]
                 return data
             except:
-                print('Could not get data on attempt %s: %s' % (attempt, url))
-                time.sleep(attempt*3)
-                attempt += 1
-        print('total failure...')
-        sys.exit()
-
+                print('retry in 10 sec')
+                time.sleep(10)
 
     def localToUtc(self, date):
         return date + self.utc_datecor
