@@ -173,7 +173,6 @@ class OWAmcat(OWWidget):
     @gui_require('api', 'no_api')
     @gui_require('project', 'no_project')
     @gui_require('articleset', 'no_articleset')
-
     def run_search(self):
         if not str(self.project).isdigit(): self.project = ''
         if not str(self.articleset).isdigit(): self.articleset = ''
