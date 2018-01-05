@@ -1,12 +1,16 @@
-import sys
-import numpy
-
-import Orange.data
-from Orange.widgets.widget import OWWidget, Input, Output
+import numpy as np
+from AnyQt.QtCore import Qt
+from AnyQt.QtGui import QIntValidator
 from Orange.widgets import gui
-
-from Orange import data
+from Orange.widgets.settings import Setting
+from Orange.widgets.widget import OWWidget, Input, Output, Msg
 from orangecontrib.text.corpus import Corpus
+from orangecontrib.text.widgets.utils.concurrent import asynchronous
+from orangecontrib.text.widgets.utils.decorators import gui_require
+from orangecontrib.text.widgets.utils.widgets import ListEdit
+
+from orange3sma.index import Index
+
 
 class OWQueryFilter(OWWidget):
     name = "Query Filter"
@@ -14,35 +18,129 @@ class OWQueryFilter(OWWidget):
     icon = "icons/DataSamplerA.svg"
     priority = 10
 
+    want_main_area = False
+    resizing_enabled = False
+
+    queries = Setting([])
+    include_counts = Setting(False)
+    include_unmatched = Setting(False)
+    context_window = Setting('')
+
     class Inputs:
-        #data = Input("Data", Orange.data.Table)
         data = Input("Corpus", Corpus)
 
     class Outputs:
-        #sample = Output("Sampled Data", Orange.data.Table)
-        corpus = Output("Corpus", Corpus)
+        sample = Output("Filtered Corpus", Corpus)
+        remaining = Output("Unselected Documents", Corpus)
 
-    want_main_area = False
+    class Error(OWWidget.Error):
+        no_query = Msg('Please provide a query.')
 
     def __init__(self):
         super().__init__()
 
+        self.corpus = None
+        self.index = None  # type: Index
+
         # GUI
         box = gui.widgetBox(self.controlArea, "Info")
-        self.infoa = gui.widgetLabel(box, 'No data on input yet, waiting to get something.')
-        self.infob = gui.widgetLabel(box, '')
+        self.info = gui.widgetLabel(box, 'Connect an input corpus to start querying')
+
+        query_box = gui.widgetBox(self.controlArea, 'Query', addSpace=True)
+
+
+        query_box.layout().addWidget(ListEdit(self, 'queries', '', 80, self))
+
+        gui.checkBox(self.controlArea, self, 'include_counts', label="Output query counts")
+        gui.checkBox(self.controlArea, self, 'include_unmatched', label="Include unmatched documents")
+
+        gui.lineEdit(self.controlArea, self, "context_window", "Output words in context window",
+                     validator=QIntValidator())
+
+        self.search_button = gui.button(self.controlArea, self, 'Search',
+                                        self.start_stop,
+                                        focusPolicy=Qt.NoFocus)
+
+    @gui_require('queries', 'no_query')
+    def run_search(self):
+        if self.corpus is None:
+            self.info.setText('Connect an input corpus to start querying')
+            self.Outputs.sample.send(None)
+        else:
+            # start async search
+            self.search()
+
+    def start_stop(self):
+        if self.search.running:
+            self.search.stop()
+        else:
+            self.run_search()
+
+    @asynchronous
+    def search(self):
+        indices = [0]
+        self.progressBarInit()
+
+        if self.index is None:
+            self.index = Index(self.corpus)
+        self.progressBarAdvance(50)
+
+        if not self.include_counts:
+            # simple search
+            query = " OR ".join('({})'.format(q) for q in self.queries)
+
+            if not self.context_window:
+                selected = list(self.index.search(query))
+                sample = self.corpus[selected]
+            else:
+                sample = self.corpus.copy()
+                sample._tokens = sample._tokens.copy()
+                selected = []
+                for i, context in self.index.get_context(query, int(self.context_window)):
+                    sample._tokens[i] = context
+                    selected.append(i)
+                sample = sample[selected]
+
+            o = np.ones(len(self.corpus))
+            o[selected] = 0
+            remaining = np.nonzero(o)[0]
+            remaining = self.corpus[remaining]
+        else:
+            sample = self.corpus.copy()
+            remaining = None
+            seen = set()
+            for q in self.queries:
+                # todo: implement as sparse matrix!
+                scores = np.zeros(len(sample), dtype=np.int)
+                for i, j in self.index.search(q, frequencies=True):
+                    seen.add(i)
+                    scores[i] = j
+                scores = scores.reshape((len(sample), 1))
+                sample.extend_attributes(scores, [q])
+            if self.include_unmatched:
+                remaining = None
+            else:
+                selected = list(seen)
+                o = np.ones(len(self.corpus))
+                o[selected] = 0
+                remaining = np.nonzero(o)[0]
+                remaining = self.corpus[remaining]
+                sample = sample[selected]
+        self.progressBarFinished()
+        return sample, remaining
+
+    @search.on_result
+    def on_result(self, result):
+        sample, remaining = result
+        self.info.setText('%d sampled instances' % len(result))
+        self.Outputs.sample.send(sample)
+        self.Outputs.remaining.send(remaining)
 
     @Inputs.data
     def set_data(self, corpus):
-        if corpus is not None:
-            self.infoa.setText('%d instances in input data set' % len(dataset))
-            indices = [0]
-            sample = corpus[indices]
-            self.infob.setText('%d sampled instances' % len(sample))
-            self.Outputs.sample.send(sample)
-        else:
-            self.infoa.setText('No data on input yet, waiting to get something.')
-            self.infob.setText('')
-            self.Outputs.sample.send("Sampled Data")
+        self.corpus = corpus
+        self.index = None
+        self.run_search()
+
 
 
