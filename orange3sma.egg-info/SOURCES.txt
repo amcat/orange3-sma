@@ -1,0 +1,17 @@
+LICENCE
+README.md
+README.pypi
+requirements.txt
+setup.py
+orange3sma/__init__.py
+orange3sma/amcat_orange_api.py
+orange3sma/facebook_orange_api.py
+orange3sma.egg-info/PKG-INFO
+orange3sma.egg-info/SOURCES.txt
+orange3sma.egg-info/dependency_links.txt
+orange3sma.egg-info/entry_points.txt
+orange3sma.egg-info/requires.txt
+orange3sma.egg-info/top_level.txt
+orange3sma/widgets/OWAmcat.py
+orange3sma/widgets/OWFacebook.py
+orange3sma/widgets/__init__.py
