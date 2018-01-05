@@ -1,3 +1,0 @@
-[orange.widgets]
-Social Media Analytics = orange3sma.widgets
-
