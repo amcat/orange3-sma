@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, date
 
 from AnyQt.QtCore import Qt
-from AnyQt.QtWidgets import QApplication, QFormLayout, QLineEdit
+from AnyQt.QtWidgets import QApplication, QFormLayout, QLabel, QLineEdit, QGridLayout
 
 from Orange.data import StringVariable
 from Orange.widgets.settings import Setting
@@ -12,7 +12,9 @@ from Orange.widgets.widget import Output
 
 from orangecontrib.text.corpus import Corpus
 from orange3sma.facebook_orange_api import FacebookCredentials, FacebookOrangeAPI
-from orangecontrib.text.widgets.utils import CheckListLayout, QueryBox, DatePickerInterval, gui_require, asynchronous
+from orangecontrib.text.widgets.utils import CheckListLayout, QueryBox, DatePickerInterval, ListEdit,  gui_require, asynchronous
+
+
 
 class OWFacebook(OWWidget):
     class CredentialsDialog(OWWidget):
@@ -80,7 +82,11 @@ class OWFacebook(OWWidget):
     want_main_area = False
     resizing_enabled = False
 
-    page_ids = Setting(None)
+    page_ids = Setting([])
+    modes = ['posts','feed']
+    mode = Setting(0)
+    accumulate = Setting(0)
+    max_documents = Setting('')
     date_from = Setting(datetime.now().date() - timedelta(30))
     date_to = Setting(datetime.now().date())
     attributes = [feat.name for feat, _ in FacebookOrangeAPI.metas if
@@ -108,21 +114,19 @@ class OWFacebook(OWWidget):
 
         # Query
         query_box = gui.widgetBox(self.controlArea, 'Query', addSpace=True)
-        queryset_box = gui.hBox(query_box)
-        page_ids_edit = gui.lineEdit(queryset_box, self, 'page_ids', label='Page ids', valueType=str, controlWidth=350)
-  
+        #query_box.layout().addWidget(QLabel('Query'))
+        query_box.layout().addWidget(ListEdit(self, 'page_ids',
+                         'One page ID per line', 80, self))
 
-        # Year box
         date_box = gui.hBox(query_box)
         DatePickerInterval(date_box, self, 'date_from', 'date_to',
                            min_date=None, max_date=date.today(),
-                           margin=(0, 3, 0, 0))
+                           margin=(4, 0, 0, 0))
 
-        # Text includes features
-        self.controlArea.layout().addWidget(
-            CheckListLayout('Text includes', self, 'text_includes',
-                            self.attributes,
-                            cols=2, callback=self.set_text_features))
+        mode_box = gui.hBox(query_box)
+        gui.radioButtonsInBox(query_box, self, 'mode', btnLabels=['only posts from page itself', 'all public posts on page'], orientation=0, label='Mode:')
+        gui.radioButtonsInBox(query_box, self, 'accumulate', btnLabels=['reset', 'append'], orientation=0, label='On search:')
+        gui.lineEdit(query_box, self, 'max_documents', label='Max docs per page:', valueType=str, controlWidth=50)
 
         # Output
         info_box = gui.hBox(self.controlArea, 'Output')
@@ -154,18 +158,20 @@ class OWFacebook(OWWidget):
     @gui_require('api', 'no_api')
     
     def run_search(self):
+        if not str(self.max_documents).isdigit(): self.max_documents = ''
         self.search()
 
     @asynchronous
     def search(self):
-        page_ids = self.page_ids.replace(',', ' ').replace(';', ' ')
-        page_ids = [page_id for page_id in page_ids.split(' ') if not page_id == '']
-        return self.api.search(page_ids, 'posts', self.date_from, self.date_to)
+        mode = self.modes[self.mode]
+        accumulate = self.accumulate == 1
+        max_documents = int(self.max_documents) if not self.max_documents == '' else None
+        return self.api.search(self.page_ids, mode, self.date_from, self.date_to, max_documents=max_documents, accumulate=accumulate)
 
     @search.callback(should_raise=False)
     def progress_with_info(self, n_retrieved, n_all):
         self.progressBarSet(100 * (n_retrieved / n_all if n_all else 1), None)  # prevent division by 0
-        self.output_info = '{}/{}'.format(n_retrieved, n_all)
+        self.output_info = '{}/{}%'.format(n_retrieved, n_all)
 
     @search.on_start
     def on_start(self):

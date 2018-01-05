@@ -6,7 +6,7 @@ from Orange import data
 from orangecontrib.text.corpus import Corpus
 
 
-ARTICLES_PER_PAGE = 100
+ARTICLES_PER_PAGE = 1000
 
 class AmcatCredentials:
     """ The AmCAT API credentials. """
@@ -115,7 +115,7 @@ class AmcatOrangeAPI:
             self.on_progress(p*self.per_page, pages * self.per_page)
         
         c = Corpus.from_documents(self.results, 'AmCAT', self.attributes, self.class_vars, self.metas, self.title_indices)
-        c.text_features = self.text_features
+        c.set_text_features(self.text_features)
         return c
 
 

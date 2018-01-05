@@ -58,15 +58,18 @@ class FacebookOrangeAPI():
     def getData(self, url, params=None):
         while True:
             if self.should_break():
-                    break
+                return {}
             try:
                 headers = {'Authorization': 'Bearer ' + self.credentials.token}
                 p = requests.get(url, params=params, headers=headers)
                 data = json.loads(p.text)
                 return data
-            except:
+            except:                
                 print('retry in 10 sec')
-                time.sleep(10)
+                for i in range(100):
+                    if self.should_break():
+                        return {}
+                    time.sleep(0.1)
 
     def localToUtc(self, date):
         return date + self.utc_datecor
@@ -128,7 +131,7 @@ class FacebookOrangeAPI():
     def getComments(self, post_ids):
         None
               
-    def _search(self, page_ids, mode, since, until):
+    def _search(self, page_ids, mode, since, until, max_documents):
         since = since.strftime('%Y-%m-%d')
         until = until.strftime('%Y-%m-%d')
         since = datetime.strptime(since, '%Y-%m-%d')
@@ -140,8 +143,11 @@ class FacebookOrangeAPI():
         for page_i in range(0,n_pages):    
             page_id = page_ids[page_i]
             page_progress = progress_pct * page_i 
+            n = 0
             for d in self.getStatuses(page_id, mode, since, until):
                 if self.should_break():
+                    return
+                if n >= max_documents:
                     break
                 earliest_date = d[-1]['status_published']
                 sec_to_go = (until - earliest_date).total_seconds()
@@ -149,25 +155,22 @@ class FacebookOrangeAPI():
                 progress = math.ceil((page_progress + date_progress)*100)
                 self.on_progress(progress, 100)
                 for doc in d:
-                    yield doc
+                    n += 1
+                    if n <= max_documents:
+                        yield doc
+        self.on_progress(100, 100)
 
     def search(self, page_ids, mode='posts', since= datetime.now() - timedelta(10), until=datetime.now(), max_documents=None, accumulate=False):
         if not accumulate:
             self.results = []
         
-        n = 0
-        for doc in self._search(page_ids, mode, since, until):
-            n += 1  
+        for doc in self._search(page_ids, mode, since, until, max_documents):
             doc['status_published'] = doc['status_published'].strftime('%Y-%m-%dT%H:%M:%S')
             doc['status_published_utc'] = doc['status_published_utc'].strftime('%Y-%m-%dT%H:%M:%S')
             self.results.append(doc)
-            if max_documents:
-                if n > max_documents:
-                    break
-            
- 
+             
         c = Corpus.from_documents(self.results, 'Facebook', self.attributes, self.class_vars, self.metas, self.title_indices)
-        c.text_features = self.text_features
+        c.set_text_features(self.text_features)
         return c
 
 if __name__ == '__main__':

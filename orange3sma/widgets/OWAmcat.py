@@ -12,7 +12,7 @@ from Orange.widgets.widget import Output
 
 from orangecontrib.text.corpus import Corpus
 from orange3sma.amcat_orange_api import AmcatCredentials, AmcatOrangeAPI
-from orangecontrib.text.widgets.utils import CheckListLayout, QueryBox, DatePickerInterval, gui_require, asynchronous
+from orangecontrib.text.widgets.utils import CheckListLayout, QueryBox, DatePickerInterval, ListEdit, gui_require, asynchronous
 
 class OWAmcat(OWWidget):
     class CredentialsDialog(OWWidget):
@@ -93,7 +93,9 @@ class OWAmcat(OWWidget):
 
     project = Setting('')
     articleset = Setting('')
-    query = Setting('')
+    query = Setting([])
+    accumulate = Setting(0)
+    max_documents = Setting('')
     date_from = Setting(date(1900,1,1))
     date_to = Setting(datetime.now().date())
     attributes = [feat.name for feat, _ in AmcatOrangeAPI.metas if
@@ -127,8 +129,8 @@ class OWAmcat(OWWidget):
         project_edit = gui.lineEdit(aset_box, self, 'project', label='Project: ',  orientation=1, valueType=str)
         set_edit = gui.lineEdit(aset_box, self, 'articleset', label='Articleset: ', orientation=1, valueType=str)
         queryset_box = gui.hBox(query_box)
-        query_edit = gui.lineEdit(queryset_box, self, 'query', label='Query', valueType=str, controlWidth=350)
-  
+        query_box.layout().addWidget(ListEdit(self, 'query',
+                         'One query per line', 80, self))
 
         # Year box
         date_box = gui.hBox(query_box)
@@ -136,11 +138,16 @@ class OWAmcat(OWWidget):
                            min_date=None, max_date=date.today(),
                            margin=(0, 3, 0, 0))
 
+        gui.radioButtonsInBox(query_box, self, 'accumulate', btnLabels=['reset', 'append'], orientation=0, label='On search:')
+        gui.lineEdit(query_box, self, 'max_documents', label='Max docs per page:', valueType=str, controlWidth=50)
+
         # Text includes features
-        self.controlArea.layout().addWidget(
-            CheckListLayout('Text includes', self, 'text_includes',
-                            self.attributes,
-                            cols=2, callback=self.set_text_features))
+        #self.controlArea.layout().addWidget(
+        #    CheckListLayout('Text includes', self, 'text_includes',
+        #                    self.attributes,
+        #                    cols=2, callback=self.set_text_features))
+
+    
 
         # Output
         info_box = gui.hBox(self.controlArea, 'Output')
@@ -176,11 +183,18 @@ class OWAmcat(OWWidget):
     def run_search(self):
         if not str(self.project).isdigit(): self.project = ''
         if not str(self.articleset).isdigit(): self.articleset = ''
+        if not str(self.max_documents).isdigit(): self.max_documents = ''
         self.search()
 
     @asynchronous
     def search(self):
-        return self.api.search(self.project, self.articleset, self.query, self.date_from, self.date_to)
+        accumulate = self.accumulate == 1
+        max_documents = int(self.max_documents) if not self.max_documents == '' else None
+        if self.query == '':
+            query = ''
+        else:
+            query = ' OR '.join(['({q})'.format(q=q) for q in self.query])
+        return self.api.search(self.project, self.articleset, query, self.date_from, self.date_to)
 
     @search.callback(should_raise=False)
     def progress_with_info(self, n_retrieved, n_all):
