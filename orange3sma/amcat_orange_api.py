@@ -64,7 +64,7 @@ class AmcatOrangeAPI:
         url, options, headers, data = self._build_query(project, articleset, query, from_date, to_date, columns, page)
 
         response = requests.get(url, data=data, params=options, headers=headers)
-        parsed = json.loads(response.text)
+        parsed = response.json()
 
         if page == 1:   # store number of pages
             self.pages = parsed['pages']
