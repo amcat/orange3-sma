@@ -62,11 +62,10 @@ class FacebookOrangeAPI():
             try:
                 headers = {'Authorization': 'Bearer ' + self.credentials.token}
                 p = requests.get(url, params=params, headers=headers)
-                data = json.loads(p.text)
-                return data
+                return p.json()
             except:                
-                print('retry in 10 sec')
-                for i in range(100):
+                print('retry in 5 sec')
+                for i in range(50):
                     if self.should_break():
                         return {}
                     time.sleep(0.1)
@@ -147,8 +146,6 @@ class FacebookOrangeAPI():
             for d in self.getStatuses(page_id, mode, since, until):
                 if self.should_break():
                     return
-                if n >= max_documents:
-                    break
                 earliest_date = d[-1]['status_published']
                 sec_to_go = (until - earliest_date).total_seconds()
                 date_progress = ((sec_to_go / total_sec) * progress_pct)
@@ -156,8 +153,13 @@ class FacebookOrangeAPI():
                 self.on_progress(progress, 100)
                 for doc in d:
                     n += 1
-                    if n <= max_documents:
-                        yield doc
+                    if max_documents is not None:
+                        if n >= max_documents:
+                            break
+                    yield doc
+                if max_documents is not None:
+                    if n >= max_documents:
+                        break
         self.on_progress(100, 100)
 
     def search(self, page_ids, mode='posts', since= datetime.now() - timedelta(10), until=datetime.now(), max_documents=None, accumulate=False):
