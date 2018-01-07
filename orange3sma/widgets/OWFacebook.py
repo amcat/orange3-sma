@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, date
+from dateutil import relativedelta
 
 from AnyQt.QtCore import Qt
 from AnyQt.QtWidgets import QApplication, QFormLayout, QLabel, QLineEdit, QGridLayout
@@ -14,6 +15,8 @@ from orangecontrib.text.corpus import Corpus
 from orange3sma.facebook_orange_api import FacebookCredentials, FacebookOrangeAPI
 from orangecontrib.text.widgets.utils import CheckListLayout, QueryBox, DatePickerInterval, ListEdit,  gui_require, asynchronous
 
+DATE_OPTIONS = ["Last week", "Last month", "From", "Between"]
+LAST_WEEK, LAST_MONTH, DATE_FROM, DATE_BETWEEN = range(len(DATE_OPTIONS))
 
 
 class OWFacebook(OWWidget):
@@ -87,8 +90,11 @@ class OWFacebook(OWWidget):
     mode = Setting(0)
     accumulate = Setting(0)
     max_documents = Setting('')
-    date_from = Setting(datetime.now().date() - timedelta(30))
-    date_to = Setting(datetime.now().date())
+
+    date_option = Setting(0)
+    date_from = Setting(date(1900, 1, 1))
+    date_to = datetime.now().date()
+
     attributes = [feat.name for feat, _ in FacebookOrangeAPI.metas if
                   isinstance(feat, StringVariable)]
     text_includes = Setting([feat.name for feat in FacebookOrangeAPI.text_features])
@@ -114,19 +120,29 @@ class OWFacebook(OWWidget):
 
         # Query
         query_box = gui.widgetBox(self.controlArea, 'Query', addSpace=True)
-        #query_box.layout().addWidget(QLabel('Query'))
         query_box.layout().addWidget(ListEdit(self, 'page_ids',
                          'One page ID per line', 80, self))
 
-        date_box = gui.hBox(query_box)
-        DatePickerInterval(date_box, self, 'date_from', 'date_to',
-                           min_date=None, max_date=date.today(),
-                           margin=(4, 0, 0, 0))
+        #date_box = gui.hBox(query_box)
+        #DatePickerInterval(date_box, self, 'date_from', 'date_to',
+        #                   min_date=None, max_date=date.today(),
+        #                   margin=(4, 0, 0, 0))
 
-        mode_box = gui.hBox(query_box)
-        gui.radioButtonsInBox(query_box, self, 'mode', btnLabels=['only posts from page itself', 'all public posts on page'], orientation=0, label='Mode:')
-        gui.radioButtonsInBox(query_box, self, 'accumulate', btnLabels=['reset', 'append'], orientation=0, label='On search:')
-        gui.lineEdit(query_box, self, 'max_documents', label='Max docs per page:', valueType=str, controlWidth=50)
+        def date_changed():
+            d.picker_to.setVisible(self.date_option in [DATE_BETWEEN])
+            d.picker_from.setVisible(self.date_option in [DATE_FROM, DATE_BETWEEN])
+        gui.comboBox(query_box, self, 'date_option', items=DATE_OPTIONS, label="Date filter",
+                     callback = date_changed)
+        date_box = gui.hBox(query_box)
+        d = DatePickerInterval(date_box, self, 'date_from', 'date_to',
+                               min_date=None, max_date=date.today(),
+                               margin=(0, 3, 0, 0))
+        date_changed()
+
+        mode_box = gui.vBox(self.controlArea)
+        gui.radioButtonsInBox(mode_box, self, 'mode', btnLabels=['only posts from page itself', 'all public posts on page'], orientation=0, label='Mode:')
+        gui.radioButtonsInBox(mode_box, self, 'accumulate', btnLabels=['reset', 'append'], orientation=0, label='On search:')
+        gui.lineEdit(mode_box, self, 'max_documents', label='Max docs per page:', valueType=str, controlWidth=50)
 
         # Output
         info_box = gui.hBox(self.controlArea, 'Output')
@@ -166,6 +182,17 @@ class OWFacebook(OWWidget):
         mode = self.modes[self.mode]
         accumulate = self.accumulate == 1
         max_documents = int(self.max_documents) if not self.max_documents == '' else None
+
+        self.date_to = datetime.now().date()
+        if self.date_option == LAST_WEEK:
+            self.date_from = datetime.now().date() - timedelta(7)
+        if self.date_option == LAST_MONTH:
+            self.date_from = datetime.now().date() - relativedelta.relativedelta(months=1)
+        if self.date_option in [DATE_FROM]:
+            self.date_from = self.date_from
+        if self.date_option in [DATE_BETWEEN]:
+            self.date_to = self.date_to 
+
         return self.api.search(self.page_ids, mode, self.date_from, self.date_to, max_documents=max_documents, accumulate=accumulate)
 
     @search.callback(should_raise=False)

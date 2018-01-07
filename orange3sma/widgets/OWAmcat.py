@@ -154,7 +154,7 @@ class OWAmcat(OWWidget):
                                min_date=None, max_date=date.today(),
                                margin=(0, 3, 0, 0))
         date_changed()
-        gui.lineEdit(query_box, self, 'max_documents', label='Max docs per page:', valueType=str, controlWidth=50)
+        #gui.lineEdit(query_box, self, 'max_documents', label='Max docs:', valueType=str, controlWidth=50)
 
         # Text includes features
         #self.controlArea.layout().addWidget(
@@ -199,9 +199,6 @@ class OWAmcat(OWWidget):
         if not str(self.articleset).isdigit(): self.articleset = ''
         if not str(self.max_documents).isdigit(): self.max_documents = ''
         self.search()
-
-
-
 
     @asynchronous
     def search(self):
