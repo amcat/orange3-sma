@@ -1,18 +1,21 @@
-from datetime import datetime, timedelta, date
+from datetime import datetime, date
 
 from AnyQt.QtCore import Qt
 from AnyQt.QtWidgets import QApplication, QFormLayout, QLineEdit
-
-from Orange.data import StringVariable
+from Orange.data import StringVariable, TimeVariable
+from Orange.widgets import gui
+from Orange.widgets.credentials import CredentialManager
 from Orange.widgets.settings import Setting
 from Orange.widgets.widget import OWWidget, Msg
-from Orange.widgets.credentials import CredentialManager
-from Orange.widgets import gui
 from Orange.widgets.widget import Output
-
+from amcatclient import AmcatAPI
 from orangecontrib.text.corpus import Corpus
-from orange3sma.amcat_orange_api import AmcatCredentials, AmcatOrangeAPI
-from orangecontrib.text.widgets.utils import CheckListLayout, QueryBox, DatePickerInterval, ListEdit, gui_require, asynchronous
+from orangecontrib.text.widgets.utils import DatePickerInterval, ListEdit, gui_require, \
+    asynchronous
+
+DATE_OPTIONS = ["None", "Before", "After", "Between"]
+DATE_NONE, DATE_BEFORE, DATE_AFTER, DATE_BETWEEN = range(len(DATE_OPTIONS))
+
 
 class OWAmcat(OWWidget):
     class CredentialsDialog(OWWidget):
@@ -62,12 +65,18 @@ class OWAmcat(OWWidget):
             self.cm.token = '{}\n{}\n{}'.format(self.host_input, self.user_input, self.token_input)
             
         def check_credentials(self, drop_token=True):
-            if drop_token: self.token_input = ''
-            api = AmcatCredentials(self.host_input, self.user_input, self.passwd_input, self.token_input)
+            if drop_token:
+                token = None
+            else:
+                token = self.token_input or None
+            if token or self.passwd_input:
+                api = AmcatAPI(self.host_input, self.user_input, self.passwd_input, token)
+                if api.token is None: api = None
+            else:
+                api = None
             self.passwd_input = ''
-            self.token_input = api.token
+            self.token_input = api and api.token
             self.save_credentials()
-            if not api.valid: api = None
             self.api = api
 
         def accept(self, silent=False):
@@ -93,14 +102,17 @@ class OWAmcat(OWWidget):
 
     project = Setting('')
     articleset = Setting('')
+
+    date_option = Setting(0)
+
     query = Setting([])
-    accumulate = Setting(0)
     max_documents = Setting('')
-    date_from = Setting(date(1900,1,1))
+
+
+    date_from = Setting(date(1900, 1, 1))
     date_to = Setting(datetime.now().date())
-    attributes = [feat.name for feat, _ in AmcatOrangeAPI.metas if
-                  isinstance(feat, StringVariable)]
-    text_includes = Setting([feat.name for feat in AmcatOrangeAPI.text_features])
+
+    text_includes = Setting(['Headline', 'Content'])
 
     class Warning(OWWidget.Warning):
         no_text_fields = Msg('Text features are inferred when none are selected.')
@@ -122,7 +134,6 @@ class OWAmcat(OWWidget):
         gui.button(self.controlArea, self, 'AmCAT login',
                    callback=self.api_dlg.exec_,
                    focusPolicy=Qt.NoFocus)
-
         # Query
         query_box = gui.widgetBox(self.controlArea, 'Query', addSpace=True)
         aset_box = gui.hBox(query_box)
@@ -133,12 +144,16 @@ class OWAmcat(OWWidget):
                          'One query per line', 80, self))
 
         # Year box
+        def date_changed():
+            d.picker_to.setVisible(self.date_option in [DATE_BEFORE, DATE_BETWEEN])
+            d.picker_from.setVisible(self.date_option in [DATE_AFTER, DATE_BETWEEN])
+        gui.comboBox(query_box, self, 'date_option', items=DATE_OPTIONS, label="Date filter",
+                     callback = date_changed)
         date_box = gui.hBox(query_box)
-        DatePickerInterval(date_box, self, 'date_from', 'date_to',
-                           min_date=None, max_date=date.today(),
-                           margin=(0, 3, 0, 0))
-
-        gui.radioButtonsInBox(query_box, self, 'accumulate', btnLabels=['reset', 'append'], orientation=0, label='On search:')
+        d = DatePickerInterval(date_box, self, 'date_from', 'date_to',
+                               min_date=None, max_date=date.today(),
+                               margin=(0, 3, 0, 0))
+        date_changed()
         gui.lineEdit(query_box, self, 'max_documents', label='Max docs per page:', valueType=str, controlWidth=50)
 
         # Text includes features
@@ -163,8 +178,7 @@ class OWAmcat(OWWidget):
 
     def update_api(self, api):
         self.Error.no_api.clear()
-        self.api = AmcatOrangeAPI(api, on_progress=self.progress_with_info,
-                                       should_break=self.search.should_break)
+        self.api = api
 
     def new_query_input(self):
         self.search.stop()
@@ -186,20 +200,34 @@ class OWAmcat(OWWidget):
         if not str(self.max_documents).isdigit(): self.max_documents = ''
         self.search()
 
+
+
+
     @asynchronous
     def search(self):
-        accumulate = self.accumulate == 1
+        columns = ['id', 'date', 'medium', 'headline', 'text']
+
         max_documents = int(self.max_documents) if not self.max_documents == '' else None
-        if self.query == '':
-            query = ''
+        if not self.query and self.date_option == DATE_NONE:
+            docs = self.api.get_articles(self.project, self.articleset, columns=columns, callback=self.progress_with_info)
         else:
             query = ' OR '.join(['({q})'.format(q=q) for q in self.query])
-        return self.api.search(self.project, self.articleset, query, self.date_from, self.date_to)
+            filters = {}
+            if self.date_option in [DATE_BETWEEN, DATE_AFTER]:
+                filters['start_date'] = self.date_from
+            if self.date_option in [DATE_BETWEEN, DATE_BEFORE]:
+                filters['end_date'] = self.date_to
+            docs = self.api.search(project=self.project, articleset=self.articleset, columns=columns,
+                                   query=query, callback=self.progress_with_info, **filters)
+        return _corpus_from_results(docs)
 
     @search.callback(should_raise=False)
-    def progress_with_info(self, n_retrieved, n_all):
-        self.progressBarSet(100 * (n_retrieved / n_all if n_all else 1), None)  # prevent division by 0
-        self.output_info = '{}/{}'.format(n_retrieved, n_all)
+    def progress_with_info(self, n, total):
+        self.progressBarSet(100 * (n / total if total else 1), None)  # prevent division by 0
+        self.output_info = '{}/{}'.format(n, total)
+        if self.search.should_break():
+            #TODO doesn't actually work, callback is not called after stopping so it just hangs...
+            return False
 
     @search.on_start
     def on_start(self):
@@ -237,6 +265,17 @@ class OWAmcat(OWWidget):
             ('Text includes', ', '.join(self.text_includes)),
             ('Output', self.output_info or 'Nothing'),
         ])
+
+
+CORPUS_METAS =[(StringVariable('Headline'), lambda doc: doc.get('headline', '')),
+             (StringVariable('Content'), lambda doc: doc.get('text', '')),
+             (StringVariable('Article_id'), lambda doc: doc['id']),
+             (StringVariable('Medium'), lambda doc: doc.get('medium', '')),
+             (TimeVariable('Publication Date'), lambda doc: doc.get('date', ''))]
+
+def _corpus_from_results(docs):
+    c = Corpus.from_documents(list(docs), 'AmCAT', attributes=[], class_vars=[], metas=CORPUS_METAS, title_indices=[-1])
+    return c
 
 
 if __name__ == '__main__':

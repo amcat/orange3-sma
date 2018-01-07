@@ -18,7 +18,7 @@ if __name__ == '__main__':
     setup(name = 'orange3sma',
           description = "Provides access to the API of an AmCAT server and various content-analysis tools",
           long_description = open(readme).read(),
-          version = '0.1.2',
+          version = '0.1.3',
           packages = packages,
           entry_points={"orange.widgets": "Social Media Analytics = orange3sma.widgets"},
           author = 'Kasper Welbers and Wouter van Atteveldt',
