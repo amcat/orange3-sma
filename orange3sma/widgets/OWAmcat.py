@@ -12,6 +12,7 @@ from amcatclient import AmcatAPI
 from orangecontrib.text.corpus import Corpus
 from orangecontrib.text.widgets.utils import DatePickerInterval, ListEdit, gui_require, \
     asynchronous
+from orangecontrib.text.widgets.utils.concurrent import StopExecution
 
 DATE_OPTIONS = ["None", "Before", "After", "Between"]
 DATE_NONE, DATE_BEFORE, DATE_AFTER, DATE_BETWEEN = range(len(DATE_OPTIONS))
@@ -203,10 +204,9 @@ class OWAmcat(OWWidget):
     @asynchronous
     def search(self):
         columns = ['id', 'date', 'medium', 'headline', 'text']
-
         max_documents = int(self.max_documents) if not self.max_documents == '' else None
         if not self.query and self.date_option == DATE_NONE:
-            docs = self.api.get_articles(self.project, self.articleset, columns=columns, callback=self.progress_with_info)
+            docs = self.api.get_articles(self.project, self.articleset, columns=columns, yield_pages=True)
         else:
             query = ' OR '.join(['({q})'.format(q=q) for q in self.query])
             filters = {}
@@ -215,13 +215,23 @@ class OWAmcat(OWWidget):
             if self.date_option in [DATE_BETWEEN, DATE_BEFORE]:
                 filters['end_date'] = self.date_to
             docs = self.api.search(project=self.project, articleset=self.articleset, columns=columns,
-                                   query=query, callback=self.progress_with_info, **filters)
-        return _corpus_from_results(docs)
+                                   query=query, yield_pages=True, **filters)
+
+        results = []
+        for page in docs:
+            results += page['results']
+            try:
+                self.progress_with_info(len(results), page['total'])
+            except StopExecution:
+                self.output_info = '{}/{} (interrupted)'.format(len(results), page['total'])
+                break
+        if results:
+            return _corpus_from_results(results)
 
     @search.callback(should_raise=True)
     def progress_with_info(self, n, total):
+        self.output_info = '{n}/{total}'.format(**locals())
         self.progressBarSet(100 * (n / total if total else 1), None)  # prevent division by 0
-        self.output_info = '{}/{}'.format(n, total)
 
     @search.on_start
     def on_start(self):
