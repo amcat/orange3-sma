@@ -221,13 +221,10 @@ class OWAmcat(OWWidget):
                                    query=query, callback=self.progress_with_info, **filters)
         return _corpus_from_results(docs)
 
-    @search.callback(should_raise=False)
+    @search.callback(should_raise=True)
     def progress_with_info(self, n, total):
         self.progressBarSet(100 * (n / total if total else 1), None)  # prevent division by 0
         self.output_info = '{}/{}'.format(n, total)
-        if self.search.should_break():
-            #TODO doesn't actually work, callback is not called after stopping so it just hangs...
-            return False
 
     @search.on_start
     def on_start(self):
