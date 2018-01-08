@@ -9,19 +9,20 @@ from whoosh.qparser.default import QueryParser
 
 from typing import Iterable
 
+
 class Index(object):
     """Wrapper around a whoosh index"""
 
-    def __init__(self, corpus):
+    def __init__(self, corpus, procs=2, limitmb=256):
         self.tokens = corpus.tokens
         self.tempdir = TemporaryDirectory(prefix="orange3sma_index")
-        schema = Schema(text=TEXT(stored=False, analyzer=SpaceSeparatedTokenizer()))
+        schema = Schema(text=TEXT(stored=False, analyzer=SpaceSeparatedTokenizer()), doc_i=NUMERIC(int, 64, signed=False, stored=True))
         self.index = create_in(self.tempdir.name, schema)
-        w = self.index.writer()
-        for doc_tokens in self.tokens:
-            w.add_document(text=doc_tokens)
+        w = self.index.writer(limitmb=limitmb, procs=procs, multisegment=True) 
+        for doc_i, doc_tokens in enumerate(self.tokens):
+            w.add_document(text=doc_tokens, doc_i=doc_i)
         w.commit()
-
+        
     def search(self, query: str, frequencies=False):
         """
         Get the indices of the documents matching the query
@@ -32,10 +33,11 @@ class Index(object):
         query = QueryParser("text", self.index.schema).parse(query)
         with self.index.searcher(weighting=scoring.Frequency) as searcher:
             results = searcher.search(query, limit=None, scored=frequencies, sortedby=None)
-            if frequencies:
-                return ((results.docnum(i), int(results.score(i))) for i in range(results.scored_length()))
+
+            if frequencies:                
+                return [(results[i]['doc_i'], int(results.score(i))) for i in range(results.scored_length())]
             else:
-                return results.docs()
+                return [results[i]['doc_i'] for i in range(len(results))]
 
     def get_context(self, query: str, window: int = 30):
         """
@@ -56,6 +58,7 @@ class Index(object):
             matcher = query.matcher(searcher)
             while matcher.is_active():
                 docnum = matcher.id()
+                docnum = searcher.reader().stored_fields(docnum)
                 yield docnum, list(get_window_tokens(self.tokens[docnum], matcher.spans()))
                 matcher.next()
 

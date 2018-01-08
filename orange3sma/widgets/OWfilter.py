@@ -1,4 +1,5 @@
 import numpy as np
+import multiprocessing
 from AnyQt.QtCore import Qt
 from AnyQt.QtGui import QIntValidator
 from Orange.widgets import gui
@@ -11,6 +12,9 @@ from orangecontrib.text.widgets.utils.widgets import ListEdit
 
 from orange3sma.index import Index
 
+CPUS = multiprocessing.cpu_count()
+PROCS_OPTIONS = list(range(1,CPUS+1))
+LIMITMB_OPTIONS = [128,256,512,1024]
 
 class OWQueryFilter(OWWidget):
     name = "Query Filter"
@@ -25,6 +29,9 @@ class OWQueryFilter(OWWidget):
     include_counts = Setting(False)
     include_unmatched = Setting(False)
     context_window = Setting('')
+
+    procs = CPUS-2 if CPUS > 1 else 0 ## index for PROCS_OPTIONS
+    limitmb = len(LIMITMB_OPTIONS) - CPUS if CPUS <= len(LIMITMB_OPTIONS) else 0
 
     class Inputs:
         data = Input("Corpus", Corpus)
@@ -51,11 +58,15 @@ class OWQueryFilter(OWWidget):
 
         query_box.layout().addWidget(ListEdit(self, 'queries', '', 80, self))
 
-        gui.checkBox(self.controlArea, self, 'include_counts', label="Output query counts")
-        gui.checkBox(self.controlArea, self, 'include_unmatched', label="Include unmatched documents")
+        gui.checkBox(query_box, self, 'include_counts', label="Output query counts")
+        gui.checkBox(query_box, self, 'include_unmatched', label="Include unmatched documents")
 
-        gui.lineEdit(self.controlArea, self, "context_window", "Output words in context window",
+        gui.lineEdit(query_box, self, "context_window", "Output words in context window",
                      validator=QIntValidator())
+
+        perf_box = gui.widgetBox(self.controlArea, 'Indexing performance')
+        gui.comboBox(perf_box, self, 'procs', items=PROCS_OPTIONS, label="Number of processors")
+        gui.comboBox(perf_box, self, 'limitmb', items=LIMITMB_OPTIONS, label="Memory limit per processor")
 
         self.search_button = gui.button(self.controlArea, self, 'Search',
                                         self.start_stop,
@@ -82,7 +93,9 @@ class OWQueryFilter(OWWidget):
         self.progressBarInit()
 
         if self.index is None:
-            self.index = Index(self.corpus)
+            procs = PROCS_OPTIONS[self.procs]
+            limitmb = LIMITMB_OPTIONS[self.limitmb]
+            self.index = Index(self.corpus, self.procs, limitmb)
         self.progressBarAdvance(50)
 
         if not self.include_counts:
