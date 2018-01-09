@@ -123,11 +123,6 @@ class OWFacebook(OWWidget):
         query_box.layout().addWidget(ListEdit(self, 'page_ids',
                          'One page ID per line', 80, self))
 
-        #date_box = gui.hBox(query_box)
-        #DatePickerInterval(date_box, self, 'date_from', 'date_to',
-        #                   min_date=None, max_date=date.today(),
-        #                   margin=(4, 0, 0, 0))
-
         def date_changed():
             d.picker_to.setVisible(self.date_option in [DATE_BETWEEN])
             d.picker_from.setVisible(self.date_option in [DATE_FROM, DATE_BETWEEN])
