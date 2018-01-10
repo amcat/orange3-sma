@@ -1,6 +1,6 @@
 import numpy as np
 import multiprocessing, re
-from AnyQt.QtWidgets import QApplication, QGridLayout, QLabel, QLineEdit, QSizePolicy, QScrollArea
+from AnyQt.QtWidgets import QApplication, QGridLayout, QLabel, QLineEdit, QSizePolicy, QScrollArea, QCheckBox
 from AnyQt.QtCore import Qt, QTimer, QSize
 from AnyQt.QtGui import QIntValidator
 import Orange
@@ -65,8 +65,10 @@ class OWDictionary(OWWidget):
         inputline_box = gui.hBox(input_box)
         gui.listBox(inputline_box, self, 'label_in', labels='querytable_vars', box = 'label column', callback=self.update_if_sync)
         gui.listBox(inputline_box, self, 'query_in', labels='querytable_vars', box = 'query column', callback=self.update_if_sync)
-        gui.button(input_box, self, 'Import', self.import_queries)
-        gui.button(input_box, self, 'Synchronize', self.import_queries, toggleButton=True, value='sync')
+        input_button_box = gui.hBox(input_box)
+        gui.button(input_button_box, self, 'Keep dictionary synchronized', self.sync_on_off, toggleButton=True, value='sync', buttonType=QCheckBox)
+        gui.button(input_button_box, self, 'Import', self.import_queries)
+        gui.button(input_button_box, self, 'Append', self.append_queries)
 
         ## query field
         query_box = gui.widgetBox(self.controlArea)
@@ -104,7 +106,7 @@ class OWDictionary(OWWidget):
         scarybuttonbox.layout().setAlignment(Qt.AlignRight)
         gui.button(scarybuttonbox, self, "remove all queries", callback=self.remove_all, width=150)
 
-        self.send_button = gui.button(self.controlArea, self, 'Send queries', self.send_queries, autoDefault=True, toggleButton=True, value='send')
+        self.send_button = gui.button(self.controlArea, self, 'Apply changes', self.send_queries, autoDefault=True, toggleButton=True, value='send')
 
         QTimer.singleShot(0, self.send_queries) ## for send on startup
 
@@ -115,9 +117,8 @@ class OWDictionary(OWWidget):
     def send_sync_off(self):
         self.sync = False
         self.send = False
-        #self.send_dictionary([])
+        print(self.send)
             
-
     def get_queries(self):
         for l, q in self.query_edits:
             l = l.text()
@@ -149,7 +150,7 @@ class OWDictionary(OWWidget):
             self.query_edits.append([])
             n_lines = len(self.query_edits)
                             
-            label_edit = gui.LineEditWFocusOut(self, self.send_sync_off)
+            label_edit = gui.LineEditWFocusOut(self, self.send_sync_off)    
             self.query_edits[-1].append(label_edit)
             self.queries_box.addWidget(label_edit, n_lines, 1)
 
@@ -204,16 +205,29 @@ class OWDictionary(OWWidget):
             for edit, text in zip(editr, textr):
                 edit.setText(text)
 
+    def sync_on_off(self):
+        if self.sync and self.label_in[0] is not None and self.query_in[0] is not None:
+            self.import_queries()
+            self.sync = True ## ugly workaround around for unsetting sync with append_queries
+            self.send = True
+            self.send_queries()
+        else:
+            self.send=False
+            self.sync = False ## disable synchronize if label_in or query_in are not specified
+
     def import_queries(self):
+        self.queries = []
+        self.append_queries()
+        
+    def append_queries(self):
+        self.sync = False
+        self.send = False
         label_col = self.querytable_vars[self.label_in[0]] if not self.label_in[0] is None else None
         query_col = self.querytable_vars[self.query_in[0]] if not self.query_in[0] is None else None
         if self.querytable is not None and label_col is not None and query_col is not None:
             add_queries = self.querytable.get_dictionary(label_col, query_col)
-            self.queries = self.queries + add_queries if not self.sync else add_queries
+            self.queries = self.queries + add_queries
             self.update_queries()
-            if self.sync:
-                self.send = True
-                self.send_queries()
 
     @Inputs.data
     def set_data(self, data):
