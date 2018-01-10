@@ -40,7 +40,7 @@ class OWQueryFilter(OWWidget):
     context_window = Setting('')
     sync = Setting(False)
 
-    procs = CPUS-2 if CPUS > 1 else 0 ## index for PROCS_OPTIONS
+    procs = CPUS-2 if CPUS > 1 else 0  # index for PROCS_OPTIONS
     limitmb = len(LIMITMB_OPTIONS) - CPUS if CPUS <= len(LIMITMB_OPTIONS) else 0
 
     class Inputs:

@@ -1,14 +1,19 @@
+import logging
 import os
 from tempfile import TemporaryDirectory
+from threading import Semaphore, Lock
 
+from progressmonitor import monitored, ProgressMonitor
 from whoosh import scoring
 from whoosh.analysis.tokenizers import SpaceSeparatedTokenizer
 from whoosh.index import create_in
 from whoosh.fields import *
 from whoosh.qparser.default import QueryParser
+from orangecontrib.text.corpus import Corpus
 
 from typing import Iterable
 
+_GLOBAL_LOCK = Lock()
 
 class Index(object):
     """Wrapper around a whoosh index"""
@@ -57,10 +62,40 @@ class Index(object):
         with self.index.searcher() as searcher:
             matcher = query.matcher(searcher)
             while matcher.is_active():
-                docnum = matcher.id()
-                docnum = searcher.reader().stored_fields(docnum)
+                docnum = searcher.reader().stored_fields(matcher.id())['doc_i']
                 yield docnum, list(get_window_tokens(self.tokens[docnum], matcher.spans()))
                 matcher.next()
+
+    def term_statistics(self):
+        """
+        Yield the term and document frequency for each term in the index
+        :return: generator of (term, termfreq, docfreq) triples
+        """
+        with self.index.reader() as r:
+            for t in r.field_terms('text'):
+                yield t, r.doc_frequency('text', t), r.frequency('text', t)
+
+    def reader(self, *args, **kargs):
+        return self.index.reader(*args, **kargs)
+
+
+@monitored(100)
+def get_index(corpus: Corpus, monitor: ProgressMonitor) -> Index:
+    """
+    Get the index for the provided corpus, reindexing (and tokenizing) if needed
+    """
+    with _GLOBAL_LOCK:
+        if not hasattr(corpus, "_orange3sma_index_lock"):
+            corpus._orange3sma_index_lock = Lock()
+    with corpus._orange3sma_index_lock:
+        ix = getattr(corpus, "_orange3sma_index", None)
+        if not (ix and ix.tokens is corpus._tokens):
+            corpus.tokens  # force tokens
+            monitor.update(50)
+            logging.info("(re-)indexing corpus")
+            ix = Index(corpus)
+            corpus._orange3sma_index = ix
+    return ix
 
 if __name__ == '__main__':
     import sys
@@ -77,23 +112,10 @@ if __name__ == '__main__':
     c = Corpus.from_documents(d, 'example', [], [], metas, title_indices)
     c.set_text_features(text_features)
 
-    print("Documents:")
-    for x in d:
-        print("-", x['headline']," : ", x['text'])
+    _ix = Index(c)
 
-    ix = Index(c)
-    query = sys.argv[1]
-    print("\nmatched docs:", list(ix.search(sys.argv[1])))
-    print("\nwindows:")
-    for i, text in ix.get_context(query, window=2):
-        print(i, text)
-
-
-    scores = list(ix.search(query, frequencies=True))
-    print(scores)
     import numpy as np
-    x = np.array([[3,4]])
-
-    c.extend_attributes(x, "test")
-    print(c)
+    terms = list(_ix.term_statistics())
+    words = np.array([["a"], ["b"]])
+    print(words)
 
