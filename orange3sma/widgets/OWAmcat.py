@@ -1,4 +1,5 @@
 from datetime import datetime, date
+from requests import HTTPError
 
 from AnyQt.QtCore import Qt
 from AnyQt.QtWidgets import QApplication, QFormLayout, QLineEdit
@@ -8,7 +9,7 @@ from Orange.widgets.credentials import CredentialManager
 from Orange.widgets.settings import Setting
 from Orange.widgets.widget import OWWidget, Msg
 from Orange.widgets.widget import Output
-from amcatclient import AmcatAPI
+from amcatclient import AmcatAPI, APIError
 from orangecontrib.text.corpus import Corpus
 from orangecontrib.text.widgets.utils import DatePickerInterval, ListEdit, gui_require, \
     asynchronous
@@ -39,22 +40,23 @@ class OWAmcat(OWWidget):
 
             form = QFormLayout()
             form.setContentsMargins(5, 5, 5, 5)
-            self.host_edit = gui.lineEdit(self, self, 'host_input', controlWidth=350)
-            self.user_edit = gui.lineEdit(self, self, 'user_input', controlWidth=350)
-            self.passwd_edit = gui.lineEdit(self, self, 'passwd_input', controlWidth=350)
+            self.host_edit = gui.lineEdit(self, self, 'host_input', controlWidth=150)
+            self.user_edit = gui.lineEdit(self, self, 'user_input', controlWidth=150)
+            self.passwd_edit = gui.lineEdit(self, self, 'passwd_input', controlWidth=150)
             self.passwd_edit.setEchoMode(QLineEdit.Password)
-            self.token_edit = gui.lineEdit(self, self, 'token_input', controlWidth=350)
+            
+            tokenbox = gui.vBox(self) 
+            self.submit_button = gui.button(tokenbox, self, 'request new token', self.accept, width=100)
+            self.token_edit = gui.lineEdit(tokenbox, self, 'token_input', controlWidth=200)
             form.addRow('Host:', self.host_edit)
             form.addRow('username:', self.user_edit)
-            form.addRow('password:', self.passwd_edit)            
-            form.addRow('token:', self.token_edit)  
+            form.addRow('password:', self.passwd_edit) 
+
+            form.addRow(tokenbox)  
           
             self.controlArea.layout().addLayout(form)
             
-            #token_box = gui.hBox(self.controlArea, 'Token')
-            #self.token_edit = gui.label(token_box, self, '%(token_input)s')
 
-            self.submit_button = gui.button(self.controlArea, self, 'request new token', self.accept)
 
             self.load_credentials()
 
@@ -71,8 +73,11 @@ class OWAmcat(OWWidget):
             else:
                 token = self.token_input or None
             if token or self.passwd_input:
-                api = AmcatAPI(self.host_input, self.user_input, self.passwd_input, token)
-                if api.token is None: api = None
+                try:
+                    api = AmcatAPI(self.host_input, self.user_input, self.passwd_input, token)
+                    if api.token is None: api = None
+                except (APIError, HTTPError) as e:
+                    api = None
             else:
                 api = None
             self.passwd_input = ''
@@ -83,9 +88,9 @@ class OWAmcat(OWWidget):
         def accept(self, silent=False):
             if not silent: self.Error.invalid_credentials.clear()
             
-            self.check_credentials(drop_token = not silent) ## first time loading, use token from last session
+            self.check_credentials(drop_token = not silent) ## first time loading, use token from last session   
+            self.parent.update_api(self.api) ## always update parent, to enable the user break the token
             if self.api:
-                self.parent.update_api(self.api)
                 super().accept()
             elif not silent:
                 self.Error.invalid_credentials()
@@ -117,6 +122,7 @@ class OWAmcat(OWWidget):
 
     class Warning(OWWidget.Warning):
         no_text_fields = Msg('Text features are inferred when none are selected.')
+        search_failed = Msg('Search failed. Try refreshing the token')
 
     class Error(OWWidget.Error):
         no_api = Msg('Please provide valid login information.')
@@ -155,15 +161,6 @@ class OWAmcat(OWWidget):
                                min_date=None, max_date=date.today(),
                                margin=(0, 3, 0, 0))
         date_changed()
-        #gui.lineEdit(query_box, self, 'max_documents', label='Max docs:', valueType=str, controlWidth=50)
-
-        # Text includes features
-        #self.controlArea.layout().addWidget(
-        #    CheckListLayout('Text includes', self, 'text_includes',
-        #                    self.attributes,
-        #                    cols=2, callback=self.set_text_features))
-
-    
 
         # Output
         info_box = gui.hBox(self.controlArea, 'Output')
@@ -189,7 +186,6 @@ class OWAmcat(OWWidget):
         if self.search.running:
             self.search.stop()
         else:
-            #self.query_box.synchronize(silent=True)
             self.run_search()
 
     @gui_require('api', 'no_api')
@@ -200,11 +196,15 @@ class OWAmcat(OWWidget):
         if not str(self.articleset).isdigit(): self.articleset = ''
         if not str(self.max_documents).isdigit(): self.max_documents = ''
         self.search()
+        
+
 
     @asynchronous
     def search(self):
+        self.Warning.search_failed.clear()
         columns = ['id', 'date', 'medium', 'headline', 'text']
         max_documents = int(self.max_documents) if not self.max_documents == '' else None
+        
         if not self.query and self.date_option == DATE_NONE:
             docs = self.api.get_articles(self.project, self.articleset, columns=columns, yield_pages=True)
         else:
@@ -216,17 +216,21 @@ class OWAmcat(OWWidget):
                 filters['end_date'] = self.date_to
             docs = self.api.search(project=self.project, articleset=self.articleset, columns=columns,
                                    query=query, yield_pages=True, **filters)
-
-        results = []
-        for page in docs:
-            results += page['results']
-            try:
-                self.progress_with_info(len(results), page['total'])
-            except StopExecution:
-                self.output_info = '{}/{} (interrupted)'.format(len(results), page['total'])
-                break
-        if results:
-            return _corpus_from_results(results)
+        
+        try:
+            results = []
+            for page in docs:
+                results += page['results']
+                try:
+                    self.progress_with_info(len(results), page['total'])
+                except StopExecution:
+                    self.output_info = '{}/{} (interrupted)'.format(len(results), page['total'])
+                    break
+            if results:
+                return _corpus_from_results(results)
+        except APIError:
+            self.Warning.search_failed()
+        
 
     @search.callback(should_raise=True)
     def progress_with_info(self, n, total):
