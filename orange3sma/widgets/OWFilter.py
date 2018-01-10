@@ -4,7 +4,7 @@ import re
 from AnyQt.QtCore import Qt
 from AnyQt.QtGui import QIntValidator, QColor
 from AnyQt.QtWidgets import QApplication
-import Orange
+
 from Orange.widgets import gui
 from Orange.widgets.settings import Setting
 from Orange.widgets.widget import OWWidget, Input, Output, Msg
@@ -13,18 +13,17 @@ from orangecontrib.text.widgets.utils.concurrent import asynchronous
 from orangecontrib.text.widgets.utils.decorators import gui_require
 from orangecontrib.text.widgets.utils.widgets import ListEdit
 
-from orange3sma.index import Index
-from orange3sma.widgets.OWdictionary import Dictionary
+from orange3sma.index import get_index
+from orange3sma.progress import progress_monitor
+from orange3sma.widgets.OWDictionary import Dictionary
 
-CPUS = multiprocessing.cpu_count()
-PROCS_OPTIONS = list(range(1,CPUS+1))
-LIMITMB_OPTIONS = [128,256,512,1024]
 
 def parse_query(string):
     m = re.match("([^#]*\w)#(.*)", string)
     l, q = m.groups() if m else [string, string]
     return l.strip(), q.strip()
-    
+
+
 class OWQueryFilter(OWWidget):
     name = "Query Filter"
     description = "Subset a Corpus based on a query"
@@ -34,14 +33,11 @@ class OWQueryFilter(OWWidget):
     want_main_area = False
     resizing_enabled = False
 
-    queries = Setting(None)
+    queries = Setting('')
     include_counts = Setting(False)
     include_unmatched = Setting(False)
     context_window = Setting('')
     sync = Setting(False)
-
-    procs = CPUS-2 if CPUS > 1 else 0  # index for PROCS_OPTIONS
-    limitmb = len(LIMITMB_OPTIONS) - CPUS if CPUS <= len(LIMITMB_OPTIONS) else 0
 
     class Inputs:
         data = Input("Corpus", Corpus)
@@ -58,8 +54,6 @@ class OWQueryFilter(OWWidget):
         super().__init__()
 
         self.corpus = None
-        self.index = None  # type: Index
-
 
         # GUI
         box = gui.widgetBox(self.controlArea, "Info")
@@ -80,9 +74,9 @@ class OWQueryFilter(OWWidget):
         gui.lineEdit(query_box, self, "context_window", "Output words in context window",
                      validator=QIntValidator())
 
-        perf_box = gui.widgetBox(self.controlArea, 'Indexing performance')
-        gui.comboBox(perf_box, self, 'procs', items=PROCS_OPTIONS, label="Number of processors")
-        gui.comboBox(perf_box, self, 'limitmb', items=LIMITMB_OPTIONS, label="Memory limit per processor")
+        info_box = gui.hBox(self.controlArea, 'Status')
+        self.status = 'Waiting for input'
+        gui.label(info_box, self, '%(status)s')
 
         self.search_button = gui.button(self.controlArea, self, 'Search',
                                         self.start_stop,
@@ -124,59 +118,53 @@ class OWQueryFilter(OWWidget):
     @asynchronous
     def search(self):
         indices = [0]
-        self.progressBarInit()
+        with progress_monitor(self, 'status').task(100) as monitor:
+            index = get_index(self.corpus, monitor=monitor.submonitor(50))
 
-        if self.index is None:
-            procs = PROCS_OPTIONS[self.procs]
-            limitmb = LIMITMB_OPTIONS[self.limitmb]
-            self.index = Index(self.corpus, self.procs, limitmb)
-        self.progressBarAdvance(50)
+            if not self.include_counts:
+                # simple search
+                query = " OR ".join('({})'.format(q) for q in self.queries)
 
-        if not self.include_counts:
-            # simple search
-            query = " OR ".join('({})'.format(q) for q in self.queries)
+                if not self.context_window:
+                    selected = list(index.search(query))
+                    sample = self.corpus[selected]
+                else:
+                    sample = self.corpus.copy()
+                    sample._tokens = sample._tokens.copy()
+                    selected = []
+                    for i, context in index.get_context(query, int(self.context_window)):
+                        sample._tokens[i] = context
+                        selected.append(i)
+                    sample = sample[selected]
 
-            if not self.context_window:
-                selected = list(self.index.search(query))
-                sample = self.corpus[selected]
-            else:
-                sample = self.corpus.copy()
-                sample._tokens = sample._tokens.copy()
-                selected = []
-                for i, context in self.index.get_context(query, int(self.context_window)):
-                    sample._tokens[i] = context
-                    selected.append(i)
-                sample = sample[selected]
-
-            o = np.ones(len(self.corpus))
-            o[selected] = 0
-            remaining = np.nonzero(o)[0]
-            remaining = self.corpus[remaining]
-        else:
-            sample = self.corpus.copy()
-            remaining = None
-            seen = set()
-            for q in self.queries:
-                label, q = parse_query(q)
-                
-                # todo: implement as sparse matrix!
-                scores = np.zeros(len(sample), dtype=np.int)
-                for i, j in self.index.search(q, frequencies=True):
-                    seen.add(i)
-                    scores[i] = j
-                scores = scores.reshape((len(sample), 1))
-                sample.extend_attributes(scores, [label])
-            if self.include_unmatched:
-                remaining = None
-            else:
-                selected = list(seen)
                 o = np.ones(len(self.corpus))
                 o[selected] = 0
                 remaining = np.nonzero(o)[0]
                 remaining = self.corpus[remaining]
-                sample = sample[selected]
-        self.progressBarFinished()
-        return sample, remaining
+            else:
+                sample = self.corpus.copy()
+                remaining = None
+                seen = set()
+                for q in self.queries:
+                    label, q = parse_query(q)
+
+                    # todo: implement as sparse matrix!
+                    scores = np.zeros(len(sample), dtype=np.int)
+                    for i, j in index.search(q, frequencies=True):
+                        seen.add(i)
+                        scores[i] = j
+                    scores = scores.reshape((len(sample), 1))
+                    sample.extend_attributes(scores, [label])
+                if self.include_unmatched:
+                    remaining = None
+                else:
+                    selected = list(seen)
+                    o = np.ones(len(self.corpus))
+                    o[selected] = 0
+                    remaining = np.nonzero(o)[0]
+                    remaining = self.corpus[remaining]
+                    sample = sample[selected]
+            return sample, remaining
 
     @search.on_result
     def on_result(self, result):
@@ -188,7 +176,6 @@ class OWQueryFilter(OWWidget):
     @Inputs.data
     def set_data(self, corpus):
         self.corpus = corpus
-        self.index = None
         self.run_search()
 
     @Inputs.dictionary

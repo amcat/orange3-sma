@@ -91,7 +91,7 @@ def frequencies(corpus, monitor):
 class OWCorpusStatistics(OWWidget):
     name = "Corpus Statistics"
     description = "Calculate word frequencies and optionally compare to reference corpus"
-    icon = "icons/DataSamplerA.svg"
+    icon = "icons/stats.svg"
     priority = 10
 
     want_main_area = False

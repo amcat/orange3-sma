@@ -1,7 +1,6 @@
-import logging
-import os
+import multiprocessing
 from tempfile import TemporaryDirectory
-from threading import Semaphore, Lock
+from threading import Lock
 
 from progressmonitor import monitored, ProgressMonitor
 from whoosh import scoring
@@ -11,9 +10,8 @@ from whoosh.fields import *
 from whoosh.qparser.default import QueryParser
 from orangecontrib.text.corpus import Corpus
 
-from typing import Iterable
-
 _GLOBAL_LOCK = Lock()
+
 
 class Index(object):
     """Wrapper around a whoosh index"""
@@ -23,7 +21,7 @@ class Index(object):
         self.tempdir = TemporaryDirectory(prefix="orange3sma_index")
         schema = Schema(text=TEXT(stored=False, analyzer=SpaceSeparatedTokenizer()), doc_i=NUMERIC(int, 64, signed=False, stored=True))
         self.index = create_in(self.tempdir.name, schema)
-        w = self.index.writer(limitmb=limitmb, procs=procs, multisegment=True) 
+        w = self.index.writer(limitmb=limitmb, procs=procs, multisegment=(procs > 1))
         for doc_i, doc_tokens in enumerate(self.tokens):
             w.add_document(text=doc_tokens, doc_i=doc_i)
         w.commit()
@@ -79,8 +77,8 @@ class Index(object):
         return self.index.reader(*args, **kargs)
 
 
-@monitored(100)
-def get_index(corpus: Corpus, monitor: ProgressMonitor) -> Index:
+@monitored(100, "Indexing corpus")
+def get_index(corpus: Corpus, monitor: ProgressMonitor, multiple_processors=True, **kargs) -> Index:
     """
     Get the index for the provided corpus, reindexing (and tokenizing) if needed
     """
@@ -90,15 +88,15 @@ def get_index(corpus: Corpus, monitor: ProgressMonitor) -> Index:
     with corpus._orange3sma_index_lock:
         ix = getattr(corpus, "_orange3sma_index", None)
         if not (ix and ix.tokens is corpus._tokens):
+            monitor.update(0, "Getting tokens")
             corpus.tokens  # force tokens
-            monitor.update(50)
-            logging.info("(re-)indexing corpus")
-            ix = Index(corpus)
+            procs = max(1, multiprocessing.cpu_count()-1) if multiple_processors else 1
+            monitor.update(50, "Creating index")
+            ix = Index(corpus, procs=procs, **kargs)
             corpus._orange3sma_index = ix
     return ix
 
 if __name__ == '__main__':
-    import sys
     from Orange import data
     from orangecontrib.text.corpus import Corpus
 
