@@ -1,7 +1,7 @@
 import numpy as np
-import multiprocessing
+import multiprocessing, re
 from AnyQt.QtWidgets import QApplication, QGridLayout, QLabel, QLineEdit, QSizePolicy, QScrollArea
-from AnyQt.QtCore import QSize, Qt
+from AnyQt.QtCore import Qt, QTimer, QSize
 from AnyQt.QtGui import QIntValidator
 import Orange
 from Orange.widgets import gui
@@ -30,6 +30,8 @@ class OWDictionary(OWWidget):
     querytable_vars = []
     label_in = [None]
     query_in = [None]
+    sync = Setting(False)
+    send = Setting(False)
 
     class Inputs:
         data = Input("Table", Orange.data.Table)
@@ -55,15 +57,16 @@ class OWDictionary(OWWidget):
         head_box.setMaximumHeight(150)
         
         info_box = gui.widgetBox(head_box, 'Info')
-        self.info = gui.widgetLabel(info_box, 'Import and/or create query dictionary')
+        self.info = gui.widgetLabel(info_box, 'Import and/or create query dictionary.\nThe dictionary will be send to output only if the "Send queries" button is ')
 
         ## from input
         input_box = gui.widgetBox(head_box, "Import")
         input_box.setMaximumWidth(350)
         inputline_box = gui.hBox(input_box)
-        gui.listBox(inputline_box, self, 'label_in', labels='querytable_vars', box = 'label column')
-        gui.listBox(inputline_box, self, 'query_in', labels='querytable_vars', box = 'query column')
-        gui.button(input_box, self, 'Import', self.queries_from_table)
+        gui.listBox(inputline_box, self, 'label_in', labels='querytable_vars', box = 'label column', callback=self.update_if_sync)
+        gui.listBox(inputline_box, self, 'query_in', labels='querytable_vars', box = 'query column', callback=self.update_if_sync)
+        gui.button(input_box, self, 'Import', self.import_queries)
+        gui.button(input_box, self, 'Synchronize', self.import_queries, toggleButton=True, value='sync')
 
         ## query field
         query_box = gui.widgetBox(self.controlArea)
@@ -81,7 +84,6 @@ class OWDictionary(OWWidget):
         querygridbox.layout().addWidget(scroll)       
         
         querygridbox.setMinimumHeight(200)
-        querygridbox.setMaximumHeight(400)
         querygridbox.setMinimumWidth(500)
         gui.rubber(query_box)
 
@@ -95,36 +97,63 @@ class OWDictionary(OWWidget):
         self.queries_box.addWidget(QLabel("Query"), 0, 2)
         self.update_queries()
 
-        gui.button(querygridbox, self, "add query", callback=self.add_row,autoDefault=False)
+        gui.button(querygridbox, self, "add query", callback=self.add_row, autoDefault=False)
 
         ## buttons
         scarybuttonbox = gui.hBox(self.controlArea)
         scarybuttonbox.layout().setAlignment(Qt.AlignRight)
         gui.button(scarybuttonbox, self, "remove all queries", callback=self.remove_all, width=150)
 
-        gui.button(self.controlArea, self, 'Send queries', self.send_queries)
+        self.send_button = gui.button(self.controlArea, self, 'Send queries', self.send_queries, autoDefault=True, toggleButton=True, value='send')
+
+        QTimer.singleShot(0, self.send_queries) ## for send on startup
+
+    def update_if_sync(self):
+        if self.sync:
+            self.import_queries()
+    
+    def send_sync_off(self):
+        self.sync = False
+        self.send = False
+        #self.send_dictionary([])
+            
+
+    def get_queries(self):
+        for l, q in self.query_edits:
+            l = l.text()
+            l = re.sub('[#?]', '', l)
+            q = q.text()
+            yield [l, q]
 
     def send_queries(self):
-        self.queries = [[label.text(), query.text()] for label, query in self.query_edits if not query.text() == '']
-        self.update_queries()
+        if self.send:
+            self.queries = list(self.get_queries())
+            self.update_queries()
+            valid_queries = [[label, query] for label, query in self.queries if not query == '']
+            self.send_dictionary(valid_queries) 
+
+    def send_dictionary(self, queries):
         domain = Orange.data.Domain([], metas = [
                                      Orange.data.StringVariable("label"),
                                      Orange.data.StringVariable("query")])
-
-        out = Orange.data.Table(domain, self.queries)
+        out = Dictionary(domain, queries)
         self.Outputs.dictionary.send(out)
 
+    def send_output(self, queries):
+        domain = Orange.data.Domain([], metas = [
+                                 Orange.data.StringVariable("label"),
+                                 Orange.data.StringVariable("query")])
 
     def adjust_n_query_rows(self):
         def _add_line():
             self.query_edits.append([])
             n_lines = len(self.query_edits)
-
-            label_edit = QLineEdit()
+                            
+            label_edit = gui.LineEditWFocusOut(self, self.send_sync_off)
             self.query_edits[-1].append(label_edit)
             self.queries_box.addWidget(label_edit, n_lines, 1)
 
-            query_edit = QLineEdit()
+            query_edit = gui.LineEditWFocusOut(self, self.send_sync_off)
             self.query_edits[-1].append(query_edit)
             self.queries_box.addWidget(query_edit, n_lines, 2)
 
@@ -175,43 +204,52 @@ class OWDictionary(OWWidget):
             for edit, text in zip(editr, textr):
                 edit.setText(text)
 
-    def table_to_dict(self, table):
-        d = {}
-        attr =  [x.name for x in table.domain.attributes]
-        metas = [x.name for x in table.domain.metas]
-        for i, a in enumerate(attr):
-           d[a] = table.attributes
-
-
-    def get_column(self, table, name):
-        for i, a in enumerate(self.querytable_attr):
-            if a == name:   
-                return [str(v[0]) for v in table[:,i]]  ## orange.table doesn't return single list, like numpy
-        for i, m in enumerate(self.querytable_metas):
-            if m == name:
-                return [str(v[0]) for v in table.metas[:,i]]
-
-    def queries_from_table(self):
-        label_in = self.label_in[0]
-        query_in = self.query_in[0]
-        if self.querytable is not None and label_in is not None and query_in is not None:
-            label = self.get_column(self.querytable, self.querytable_vars[label_in])
-            query = self.get_column(self.querytable, self.querytable_vars[query_in])
-            add_queries = [list(a) for a in zip(label,query)]
-            self.queries = self.queries + add_queries
+    def import_queries(self):
+        label_col = self.querytable_vars[self.label_in[0]] if not self.label_in[0] is None else None
+        query_col = self.querytable_vars[self.query_in[0]] if not self.query_in[0] is None else None
+        if self.querytable is not None and label_col is not None and query_col is not None:
+            add_queries = self.querytable.get_dictionary(label_col, query_col)
+            self.queries = self.queries + add_queries if not self.sync else add_queries
             self.update_queries()
+            if self.sync:
+                self.send = True
+                self.send_queries()
 
     @Inputs.data
     def set_data(self, data):
         if data is not None:
-            self.querytable = data
-            self.querytable_attr = [x.name for x in data.domain.attributes]
-            self.querytable_metas = [x.name for x in data.domain.metas]
+            self.querytable = Dictionary(data)
+            self.querytable_attr = self.querytable.attrnames()
+            self.querytable_meta = self.querytable.metanames()
             self.querytable_vars = self.querytable_attr + self.querytable_metas
         else:
             self.querytable = None
             self.querytable_attr, self.querytable_metas, self.querytable_vars = [], [], []
             self.label_in, self.query_in = [None], [None]
+
+
+
+class Dictionary(Orange.data.Table):
+    """Internal class for storing a dictionary."""
+
+    def attrnames(self):
+        return [x.name for x in self.domain.attributes]
+
+    def metanames(self):
+        return [x.name for x in self.domain.metas]
+
+    def get_column(self, name):
+        for i, a in enumerate(self.attrnames()):
+            if a == name:   
+                return [str(v[0]) for v in self[:,i]]   
+        for i, m in enumerate(self.metanames()):
+            if m == name:
+                return self.metas[:,i]  ## metas is in numpy format, so this already returns simple list
+
+    def get_dictionary(self, label_col='label', query_col='query'):
+        label = self.get_column(label_col)
+        query = self.get_column(query_col)
+        return [list(a) for a in zip(label,query)]
 
 
 if __name__ == '__main__':

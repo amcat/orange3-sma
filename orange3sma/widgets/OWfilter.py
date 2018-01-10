@@ -1,8 +1,10 @@
 import numpy as np
 import multiprocessing
+import re
 from AnyQt.QtCore import Qt
-from AnyQt.QtGui import QIntValidator
+from AnyQt.QtGui import QIntValidator, QColor
 from AnyQt.QtWidgets import QApplication
+import Orange
 from Orange.widgets import gui
 from Orange.widgets.settings import Setting
 from Orange.widgets.widget import OWWidget, Input, Output, Msg
@@ -12,11 +14,17 @@ from orangecontrib.text.widgets.utils.decorators import gui_require
 from orangecontrib.text.widgets.utils.widgets import ListEdit
 
 from orange3sma.index import Index
+from orange3sma.widgets.OWdictionary import Dictionary
 
 CPUS = multiprocessing.cpu_count()
 PROCS_OPTIONS = list(range(1,CPUS+1))
 LIMITMB_OPTIONS = [128,256,512,1024]
 
+def parse_query(string):
+    m = re.match("([^#]*\w)#(.*)", string)
+    l, q = m.groups() if m else [string, string]
+    return l.strip(), q.strip()
+    
 class OWQueryFilter(OWWidget):
     name = "Query Filter"
     description = "Subset a Corpus based on a query"
@@ -26,16 +34,18 @@ class OWQueryFilter(OWWidget):
     want_main_area = False
     resizing_enabled = False
 
-    queries = Setting('')
+    queries = Setting(None)
     include_counts = Setting(False)
     include_unmatched = Setting(False)
     context_window = Setting('')
+    sync = Setting(False)
 
     procs = CPUS-2 if CPUS > 1 else 0 ## index for PROCS_OPTIONS
     limitmb = len(LIMITMB_OPTIONS) - CPUS if CPUS <= len(LIMITMB_OPTIONS) else 0
 
     class Inputs:
         data = Input("Corpus", Corpus)
+        dictionary = Input("Dictionary", Dictionary)
 
     class Outputs:
         sample = Output("Filtered Corpus", Corpus)
@@ -50,15 +60,20 @@ class OWQueryFilter(OWWidget):
         self.corpus = None
         self.index = None  # type: Index
 
+
         # GUI
         box = gui.widgetBox(self.controlArea, "Info")
         self.info = gui.widgetLabel(box, 'Connect an input corpus to start querying')
 
+        self.import_box = gui.hBox(self.controlArea, self)
+        self.import_box.setVisible(False)
+        gui.button(self.import_box, self, 'Import queries', self.import_queries)
+        gui.button(self.import_box, self, 'Synchronize', self.sync_toggle, toggleButton=True, value='sync')
+        
         query_box = gui.widgetBox(self.controlArea, 'Query', addSpace=True)
-
-
-        query_box.layout().addWidget(ListEdit(self, 'queries', '', 80, self))
-
+        self.querytextbox = ListEdit(self, 'queries', '', 80, self)
+        query_box.layout().addWidget(self.querytextbox)
+       
         gui.checkBox(query_box, self, 'include_counts', label="Output query counts")
         gui.checkBox(query_box, self, 'include_unmatched', label="Include unmatched documents")
 
@@ -87,6 +102,24 @@ class OWQueryFilter(OWWidget):
             self.search.stop()
         else:
             self.run_search()
+
+    def import_queries(self): 
+        if self.sync:
+            self.querytextbox.setTextColor(QColor(200, 200, 200))
+            self.querytextbox.setReadOnly(True)
+            self.queries = []
+        for label, query in self.dictionary:
+            q = label + '# ' + query if label else query
+            self.queries.append(q)
+        self.querytextbox.setText('\n'.join(self.queries))
+        
+    def sync_toggle(self):
+        if self.sync:
+            self.import_queries()
+        else:
+            self.querytextbox.setTextColor(QColor(0, 0, 0))
+            self.querytextbox.setText('\n'.join(self.queries))
+            self.querytextbox.setReadOnly(False)
 
     @asynchronous
     def search(self):
@@ -124,13 +157,15 @@ class OWQueryFilter(OWWidget):
             remaining = None
             seen = set()
             for q in self.queries:
+                label, q = parse_query(q)
+                
                 # todo: implement as sparse matrix!
                 scores = np.zeros(len(sample), dtype=np.int)
                 for i, j in self.index.search(q, frequencies=True):
                     seen.add(i)
                     scores[i] = j
                 scores = scores.reshape((len(sample), 1))
-                sample.extend_attributes(scores, [q])
+                sample.extend_attributes(scores, [label])
             if self.include_unmatched:
                 remaining = None
             else:
@@ -156,6 +191,14 @@ class OWQueryFilter(OWWidget):
         self.index = None
         self.run_search()
 
+    @Inputs.dictionary
+    def set_dictionary(self, dictionary):
+        if dictionary:
+            self.import_box.setVisible(True)
+            self.dictionary = dictionary.get_dictionary()
+        else:
+            self.import_box.setVisible(False)
+    
 if __name__ == '__main__':
     app = QApplication([])
     widget = OWQueryFilter()
