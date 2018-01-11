@@ -127,7 +127,7 @@ class FacebookOrangeAPI():
 
     def getComments(self, post_ids):
         None
-              
+
     def _search(self, page_ids, mode, since, until, max_documents):
         since = since.strftime('%Y-%m-%d')
         until = until.strftime('%Y-%m-%d')

@@ -39,7 +39,7 @@ class OWFacebook(OWWidget):
             self.parent = parent
             self.api = None
 
-            self.info = gui.widgetLabel(self.controlArea, 'There are two ways to connect. Either register a Facebook app or obtain a temporary (2 hour) access token. Both require a Facebook account.')
+            self.info = gui.widgetLabel(self.controlArea, 'There are two ways to connect. Either register a Facebook app or obtain a temporary access token. Both require a Facebook account.')
             self.info.setWordWrap(True);
 
             login_box = gui.hBox(self.controlArea) 
@@ -50,7 +50,7 @@ class OWFacebook(OWWidget):
             ## app login
             app_form = QFormLayout()
             app_form.setContentsMargins(5, 5, 5, 5)
-            app_info = gui.widgetLabel(app_login, 'To obtain an App ID and secret, register <a href=\"https://developers.facebook.com/?advanced_app_create=true\">here</a>. The information is on the app dashboard')
+            app_info = gui.widgetLabel(app_login, 'To obtain an App ID and secret, register <a href=\"https://developers.facebook.com/?advanced_app_create=true\">here</a>. The information is on the app dashboard.')
             app_info.setWordWrap(True);                
             app_info.setOpenExternalLinks(True)
             self.app_id_edit = gui.lineEdit(self, self, 'app_id_input', controlWidth=350)           
@@ -63,7 +63,7 @@ class OWFacebook(OWWidget):
             ## temp login
             temp_form = QFormLayout()
             temp_form.setContentsMargins(5, 5, 5, 5)
-            temp_info = gui.widgetLabel(temp_login, 'To obtain a temporary access token, visit <a href=\"https://developers.facebook.com/tools/explorer">here</a>. Copy the text from the "Access Token:" box')   
+            temp_info = gui.widgetLabel(temp_login, 'To obtain a temporary (2 hour) access token, visit <a href=\"https://developers.facebook.com/tools/explorer">here</a>. Copy the text from the "Access Token:" box.')
             temp_info.setWordWrap(True);
             temp_info.setOpenExternalLinks(True)
             self.temp_token_edit = gui.lineEdit(self, self, 'temp_token_input', controlWidth=350)   
@@ -204,7 +204,7 @@ class OWFacebook(OWWidget):
         if self.search.running:
             self.search.stop()
         else:
-            if self.api.credentials.valid:
+            if self.api.credentials is not None and self.api.credentials.valid:
                 self.Error.no_api.clear()
                 self.run_search()
             else:
