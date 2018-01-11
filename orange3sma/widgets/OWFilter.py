@@ -3,7 +3,7 @@ import multiprocessing
 import re
 from AnyQt.QtCore import Qt
 from AnyQt.QtGui import QIntValidator, QColor
-from AnyQt.QtWidgets import QApplication
+from AnyQt.QtWidgets import QApplication, QCheckBox
 
 from Orange.widgets import gui
 from Orange.widgets.settings import Setting
@@ -34,10 +34,11 @@ class OWQueryFilter(OWWidget):
     resizing_enabled = False
 
     queries = Setting('')
+    dictionary_text = Setting('')
     include_counts = Setting(False)
     include_unmatched = Setting(False)
     context_window = Setting('')
-    sync = Setting(False)
+    dictionary_on = True
 
     class Inputs:
         data = Input("Corpus", Corpus)
@@ -59,10 +60,13 @@ class OWQueryFilter(OWWidget):
         box = gui.widgetBox(self.controlArea, "Info")
         self.info = gui.widgetLabel(box, 'Connect an input corpus to start querying')
 
-        self.import_box = gui.hBox(self.controlArea, self)
+        self.import_box = gui.vBox(self.controlArea, 'Dictionary')
         self.import_box.setVisible(False)
-        gui.button(self.import_box, self, 'Import queries', self.import_queries)
-        gui.button(self.import_box, self, 'Synchronize', self.sync_toggle, toggleButton=True, value='sync')
+        gui.button(self.import_box, self, 'Use dictionary', toggleButton=True, value='dictionary_on', buttonType=QCheckBox)
+        self.dictionarybox = ListEdit(self, 'queries', '', 60, self)
+        self.dictionarybox.setTextColor(QColor(100, 100, 100))
+        self.dictionarybox.setReadOnly(True)
+        self.import_box.layout().addWidget(self.dictionarybox)
         
         query_box = gui.widgetBox(self.controlArea, 'Query', addSpace=True)
         self.querytextbox = ListEdit(self, 'queries', '', 80, self)
@@ -96,34 +100,25 @@ class OWQueryFilter(OWWidget):
             self.search.stop()
         else:
             self.run_search()
-
-    def import_queries(self): 
-        if self.sync:
-            self.querytextbox.setTextColor(QColor(200, 200, 200))
-            self.querytextbox.setReadOnly(True)
-            self.queries = []
-        for label, query in self.dictionary:
-            q = label + '# ' + query if label else query
-            self.queries.append(q)
-        self.querytextbox.setText('\n'.join(self.queries))
         
-    def sync_toggle(self):
-        if self.sync:
-            self.import_queries()
-        else:
-            self.querytextbox.setTextColor(QColor(0, 0, 0))
-            self.querytextbox.setText('\n'.join(self.queries))
-            self.querytextbox.setReadOnly(False)
-
+    def import_dictionary(self):    
+        self.dictionary_text = []   
+        for label, query in self.dictionary:
+            q = label.strip() + '# ' + query.strip() if label else query.strip()
+            self.dictionary_text.append(q)
+        self.dictionarybox.setText('\n'.join(self.dictionary_text))
+    
     @asynchronous
     def search(self):
         indices = [0]
+        queries = self.dictionary_text + self.queries if self.dictionary_on else self.queries
+
         with progress_monitor(self, 'status').task(100) as monitor:
             index = get_index(self.corpus, monitor=monitor.submonitor(50))
 
             if not self.include_counts:
                 # simple search
-                query = " OR ".join('({})'.format(q) for q in self.queries)
+                query = " OR ".join('({})'.format(q) for q in queries)
 
                 if not self.context_window:
                     selected = list(index.search(query))
@@ -145,7 +140,7 @@ class OWQueryFilter(OWWidget):
                 sample = self.corpus.copy()
                 remaining = None
                 seen = set()
-                for q in self.queries:
+                for q in queries:
                     label, q = parse_query(q)
 
                     # todo: implement as sparse matrix!
@@ -181,11 +176,14 @@ class OWQueryFilter(OWWidget):
     @Inputs.dictionary
     def set_dictionary(self, dictionary):
         if dictionary:
+            self.dictionary_on = True
             self.import_box.setVisible(True)
             self.dictionary = dictionary.get_dictionary()
+            self.import_dictionary()
         else:
+            self.dictionary_on = False
             self.import_box.setVisible(False)
-    
+            
 if __name__ == '__main__':
     app = QApplication([])
     widget = OWQueryFilter()

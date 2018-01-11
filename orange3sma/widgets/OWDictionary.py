@@ -57,16 +57,16 @@ class OWDictionary(OWWidget):
         head_box.setMaximumHeight(150)
         
         info_box = gui.widgetBox(head_box, 'Info')
-        self.info = gui.widgetLabel(info_box, 'Import and/or create query dictionary.\nThe dictionary will be send to output only if the "Send queries" button is ')
+        self.info = gui.widgetLabel(info_box, 'Import and/or create query dictionary.\nYou can enter the queries manually (and apply ')
 
         ## from input
-        input_box = gui.widgetBox(head_box, "Import")
+        input_box = gui.widgetBox(head_box, "Import dictionary from Table")
         input_box.setMaximumWidth(350)
         inputline_box = gui.hBox(input_box)
-        gui.listBox(inputline_box, self, 'label_in', labels='querytable_vars', box = 'label column', callback=self.update_if_sync)
-        gui.listBox(inputline_box, self, 'query_in', labels='querytable_vars', box = 'query column', callback=self.update_if_sync)
+        gui.listBox(inputline_box, self, 'label_in', labels='querytable_vars', box = 'Label column', callback=self.update_if_sync)
+        gui.listBox(inputline_box, self, 'query_in', labels='querytable_vars', box = 'Query column', callback=self.update_if_sync)
         input_button_box = gui.hBox(input_box)
-        gui.button(input_button_box, self, 'Keep dictionary synchronized', self.sync_on_off, toggleButton=True, value='sync', buttonType=QCheckBox)
+        gui.button(input_button_box, self, 'Keep synchronized', self.sync_on_off, toggleButton=True, value='sync', buttonType=QCheckBox)
         gui.button(input_button_box, self, 'Import', self.import_queries)
         gui.button(input_button_box, self, 'Append', self.append_queries)
 
@@ -92,21 +92,18 @@ class OWDictionary(OWWidget):
         self.queries_box.setColumnMinimumWidth(0, 5)
         self.queries_box.setColumnMinimumWidth(1, 60)
         self.queries_box.setColumnMinimumWidth(2, 350)
-        self.queries_box.setColumnStretch(0, 0)
         self.queries_box.setColumnStretch(1, 0)
         self.queries_box.setColumnStretch(2, 100)
         self.queries_box.addWidget(QLabel("Label"), 0, 1)
         self.queries_box.addWidget(QLabel("Query"), 0, 2)
         self.update_queries()
 
-        gui.button(querygridbox, self, "add query", callback=self.add_row, autoDefault=False)
+        gui.button(query_box, self, "add query", callback=self.add_row, autoDefault=False)
 
         ## buttons
         scarybuttonbox = gui.hBox(self.controlArea)
         scarybuttonbox.layout().setAlignment(Qt.AlignRight)
         gui.button(scarybuttonbox, self, "remove all queries", callback=self.remove_all, width=150)
-
-        self.send_button = gui.button(self.controlArea, self, 'Apply changes', self.send_queries, autoDefault=True, toggleButton=True, value='send')
 
         QTimer.singleShot(0, self.send_queries) ## for send on startup
 
@@ -114,10 +111,9 @@ class OWDictionary(OWWidget):
         if self.sync:
             self.import_queries()
     
-    def send_sync_off(self):
+    def query_changed(self):
         self.sync = False
-        self.send = False
-        print(self.send)
+        self.send_queries()
             
     def get_queries(self):
         for l, q in self.query_edits:
@@ -127,11 +123,11 @@ class OWDictionary(OWWidget):
             yield [l, q]
 
     def send_queries(self):
-        if self.send:
-            self.queries = list(self.get_queries())
-            self.update_queries()
-            valid_queries = [[label, query] for label, query in self.queries if not query == '']
-            self.send_dictionary(valid_queries) 
+        #if self.send:
+        self.queries = list(self.get_queries())
+        self.update_queries()
+        valid_queries = [[label, query] for label, query in self.queries if not query == '']
+        self.send_dictionary(valid_queries) 
 
     def send_dictionary(self, queries):
         domain = Orange.data.Domain([], metas = [
@@ -150,11 +146,11 @@ class OWDictionary(OWWidget):
             self.query_edits.append([])
             n_lines = len(self.query_edits)
                             
-            label_edit = gui.LineEditWFocusOut(self, self.send_sync_off)    
+            label_edit = gui.LineEditWFocusOut(self, self.query_changed)    
             self.query_edits[-1].append(label_edit)
             self.queries_box.addWidget(label_edit, n_lines, 1)
 
-            query_edit = gui.LineEditWFocusOut(self, self.send_sync_off)
+            query_edit = gui.LineEditWFocusOut(self, self.query_changed)
             self.query_edits[-1].append(query_edit)
             self.queries_box.addWidget(query_edit, n_lines, 2)
 
@@ -209,10 +205,10 @@ class OWDictionary(OWWidget):
         if self.sync and self.label_in[0] is not None and self.query_in[0] is not None:
             self.import_queries()
             self.sync = True ## ugly workaround around for unsetting sync with append_queries
-            self.send = True
+            #self.send = True
             self.send_queries()
         else:
-            self.send=False
+            #self.send=False
             self.sync = False ## disable synchronize if label_in or query_in are not specified
 
     def import_queries(self):

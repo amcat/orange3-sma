@@ -55,9 +55,6 @@ class OWAmcat(OWWidget):
             form.addRow(tokenbox)  
           
             self.controlArea.layout().addLayout(form)
-            
-
-
             self.load_credentials()
 
         def load_credentials(self):
@@ -186,6 +183,7 @@ class OWAmcat(OWWidget):
         if self.search.running:
             self.search.stop()
         else:
+            
             self.run_search()
 
     @gui_require('api', 'no_api')

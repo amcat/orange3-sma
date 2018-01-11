@@ -15,12 +15,10 @@ class FacebookCredentials:
             
     @property
     def valid(self):
-        ## this should be replaced by a proper check of the token
-        return not self.token == ''
-
-    def __eq__(self, other):
-        return self.token == other.token
-
+        url = BASE_URL + '/facebook/?fields=id'
+        headers = {'Authorization': 'Bearer ' + self.token}
+        p = requests.get(url, headers=headers)    
+        return 'id' in p.json().keys()
 
 class FacebookOrangeAPI():
     attributes = []
@@ -137,6 +135,7 @@ class FacebookOrangeAPI():
         until = datetime.strptime(until + 'T23:59:59', '%Y-%m-%dT%H:%M:%S')
         total_sec = float((until - since).total_seconds())
         n_pages = len(page_ids)
+        
         progress_pct = 1 / float(n_pages)
         
         for page_i in range(0,n_pages):    
@@ -175,9 +174,9 @@ class FacebookOrangeAPI():
         c.set_text_features(self.text_features)
         return c
 
-if __name__ == '__main__':
-    access_token  = '454870931379640|0bca7149855f3867ee4d16f3757a95d7'
-    cred = FacebookCredentials(access_token)
-    f = FacebookOrangeAPI(cred)
-    for a in f.search(['volkskrant']):
-        None   
+#if __name__ == '__main__':
+#    access_token  = ''
+#    cred = FacebookCredentials(access_token)
+#    f = FacebookOrangeAPI(cred)
+#    for a in f.search(['volkskrant']):
+#        None   

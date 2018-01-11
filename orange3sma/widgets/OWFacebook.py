@@ -27,6 +27,9 @@ class OWFacebook(OWWidget):
         cm = CredentialManager('Facebook orange')
         app_id_input = ''
         app_secret_input = ''
+        temp_token_input = ''
+        token_input = ''
+        
         
         class Error(OWWidget.Error):
             invalid_credentials = Msg('These credentials are invalid.')
@@ -36,40 +39,75 @@ class OWFacebook(OWWidget):
             self.parent = parent
             self.api = None
 
-            form = QFormLayout()
-            form.setContentsMargins(5, 5, 5, 5)
+            self.info = gui.widgetLabel(self.controlArea, 'There are two ways to connect. Either register a Facebook app or obtain a temporary (2 hour) access token. Both require a Facebook account.')
+            self.info.setWordWrap(True);
+
+            login_box = gui.hBox(self.controlArea) 
+            login_box.setMinimumWidth(300)
+            app_login = gui.widgetBox(login_box, box='Option 1: App login')
+            temp_login = gui.widgetBox(login_box, box = 'Option 2: Temporary access token')
+    
+            ## app login
+            app_form = QFormLayout()
+            app_form.setContentsMargins(5, 5, 5, 5)
+            app_info = gui.widgetLabel(app_login, 'To obtain an App ID and secret, register <a href=\"https://developers.facebook.com/?advanced_app_create=true\">here</a>. The information is on the app dashboard')
+            app_info.setWordWrap(True);                
+            app_info.setOpenExternalLinks(True)
             self.app_id_edit = gui.lineEdit(self, self, 'app_id_input', controlWidth=350)           
             self.app_secret_edit = gui.lineEdit(self, self, 'app_secret_input', controlWidth=350)           
-            form.addRow('App ID:', self.app_id_edit)  
-            form.addRow('App secret:', self.app_secret_edit)  
-            self.controlArea.layout().addLayout(form)
-            self.submit_button = gui.button(self.controlArea, self, 'Connect', self.accept)
+            app_form.addRow('App ID:', self.app_id_edit)  
+            app_form.addRow('App secret:', self.app_secret_edit)  
+            app_login.layout().addLayout(app_form)
+            self.submit_button = gui.button(app_login, self, 'Connect', self.app_accept)
 
+            ## temp login
+            temp_form = QFormLayout()
+            temp_form.setContentsMargins(5, 5, 5, 5)
+            temp_info = gui.widgetLabel(temp_login, 'To obtain a temporary access token, visit <a href=\"https://developers.facebook.com/tools/explorer">here</a>. Copy the text from the "Access Token:" box')   
+            temp_info.setWordWrap(True);
+            temp_info.setOpenExternalLinks(True)
+            self.temp_token_edit = gui.lineEdit(self, self, 'temp_token_input', controlWidth=350)   
+            temp_form.addRow('Access Token:', self.temp_token_edit)  
+            temp_login.layout().addLayout(temp_form)    
+            self.submit_button = gui.button(temp_login, self, 'Connect', self.temp_accept)
+        
             self.load_credentials()
 
         def load_credentials(self):
             if self.cm.token:
-                token = self.cm.token.split('|')
-                self.app_id_input = token[0]
-                self.app_secret_input = token[1]
+                self.token_input = self.cm.token
+                if '|' in self.cm.token:
+                    token = self.cm.token.split('|')
+                    self.app_id_input = token[0]
+                    self.app_secret_input = token[1]
+                else:
+                    self.temp_token_input = self.cm.token
             
         def save_credentials(self):
-            self.cm.token = self.app_id_input + '|' + self.app_secret_input
+            self.cm.token = self.token_input
             
         def check_credentials(self, drop_token=True):
-            token = self.app_id_input + '|' + self.app_secret_input
-            api = FacebookCredentials(token)
-            self.token_input = api.token
+            self.credentials = FacebookCredentials(self.token_input)
+            self.token_input = self.credentials.token
             self.save_credentials()
-            if not api.valid: api = None
-            self.api = api
+            if not self.credentials.valid: self.credentials = None
+
+        def app_accept(self):
+            self.token_input = self.app_id_input + '|' + self.app_secret_input
+            self.accept()
+
+         
+        def temp_accept(self):
+            self.token_input = self.temp_token_input
+            self.accept()
 
         def accept(self, silent=False):
             if not silent: self.Error.invalid_credentials.clear()
             
             self.check_credentials(drop_token = not silent) ## first time loading, use token from last session
-            if self.api:
-                self.parent.update_api(self.api)
+
+            self.parent.update_api(self.credentials) ## always update parent, to enable the user break the token
+            if self.credentials:
                 super().accept()
             elif not silent:
                 self.Error.invalid_credentials()
@@ -104,6 +142,7 @@ class OWFacebook(OWWidget):
 
     class Error(OWWidget.Error):
         no_api = Msg('Please provide valid login information.')
+        no_page_id = Msg('Please enter at least one page ID')
         
     def __init__(self):
         super().__init__()
@@ -134,10 +173,11 @@ class OWFacebook(OWWidget):
                                margin=(0, 3, 0, 0))
         date_changed()
 
-        mode_box = gui.vBox(self.controlArea)
-        gui.radioButtonsInBox(mode_box, self, 'mode', btnLabels=['only posts from page itself', 'all public posts on page'], orientation=0, label='Mode:')
-        gui.radioButtonsInBox(mode_box, self, 'accumulate', btnLabels=['reset', 'append'], orientation=0, label='On search:')
-        gui.lineEdit(mode_box, self, 'max_documents', label='Max docs per page:', valueType=str, controlWidth=50)
+        mode_box = gui.widgetBox(self.controlArea, box=True)
+        mode_box_h = gui.hBox(mode_box)
+        gui.radioButtonsInBox(mode_box_h, self, 'mode', btnLabels=['only posts from page itself', 'all public posts on page'], orientation=2, label='Mode:')
+        gui.radioButtonsInBox(mode_box_h, self, 'accumulate', btnLabels=['new results', 'add to previous results'], orientation=2, label='On search:')
+        gui.lineEdit(mode_box_h, self, 'max_documents', label='Max docs per page:', valueType=str, controlWidth=50)
 
         # Output
         info_box = gui.hBox(self.controlArea, 'Output')
@@ -164,11 +204,19 @@ class OWFacebook(OWWidget):
         if self.search.running:
             self.search.stop()
         else:
-            self.run_search()
+            if self.api.credentials.valid:
+                self.Error.no_api.clear()
+                self.run_search()
+            else:
+                self.Error.no_api()
 
     @gui_require('api', 'no_api')
-    
     def run_search(self):
+        if len(self.page_ids) == 0:
+            self.Error.no_page_id()
+            return
+        else:
+            self.Error.no_page_id.clear()
         if not str(self.max_documents).isdigit(): self.max_documents = ''
         self.search()
 
@@ -177,7 +225,7 @@ class OWFacebook(OWWidget):
         mode = self.modes[self.mode]
         accumulate = self.accumulate == 1
         max_documents = int(self.max_documents) if not self.max_documents == '' else None
-
+        
         self.date_to = datetime.now().date()
         if self.date_option == LAST_WEEK:
             self.date_from = datetime.now().date() - timedelta(7)
