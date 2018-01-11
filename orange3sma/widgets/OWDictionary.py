@@ -57,7 +57,7 @@ class OWDictionary(OWWidget):
         head_box.setMaximumHeight(150)
         
         info_box = gui.widgetBox(head_box, 'Info')
-        self.info = gui.widgetLabel(info_box, 'Import and/or create query dictionary.\nYou can enter the queries manually (and apply ')
+        self.info = gui.widgetLabel(info_box, 'Import and/or create query dictionary.')
 
         ## from input
         input_box = gui.widgetBox(head_box, "Import dictionary from Table")
