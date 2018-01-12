@@ -63,7 +63,7 @@ class OWQueryFilter(OWWidget):
         self.import_box = gui.vBox(self.controlArea, 'Dictionary')
         self.import_box.setVisible(False)
         gui.button(self.import_box, self, 'Use dictionary', toggleButton=True, value='dictionary_on', buttonType=QCheckBox)
-        self.dictionarybox = ListEdit(self, 'queries', '', 60, self)
+        self.dictionarybox = ListEdit(self, 'dictionary_text', '', 60, self)
         self.dictionarybox.setTextColor(QColor(100, 100, 100))
         self.dictionarybox.setReadOnly(True)
         self.import_box.layout().addWidget(self.dictionarybox)
@@ -101,7 +101,7 @@ class OWQueryFilter(OWWidget):
         else:
             self.run_search()
         
-    def import_dictionary(self):    
+    def import_dictionary(self):
         self.dictionary_text = []   
         for label, query in self.dictionary:
             q = label.strip() + '# ' + query.strip() if label else query.strip()

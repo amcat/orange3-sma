@@ -106,7 +106,7 @@ class OWFacebook(OWWidget):
             
             self.check_credentials(drop_token = not silent) ## first time loading, use token from last session
 
-            self.parent.update_api(self.credentials) ## always update parent, to enable the user break the token
+            self.parent.update_api(self.credentials)
             if self.credentials:
                 super().accept()
             elif not silent:
