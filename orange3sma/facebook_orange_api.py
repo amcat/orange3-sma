@@ -23,7 +23,9 @@ class FacebookCredentials:
 class FacebookOrangeAPI():
     attributes = []
     class_vars = []
-    metas = [(data.StringVariable('Message'), lambda doc: doc['status_message']),
+    image_var = data.StringVariable.make("image")
+    image_var.attributes["type"] = "image"
+    post_metas = [(data.StringVariable('Message'), lambda doc: doc['status_message']),
              (data.StringVariable('From'), lambda doc: doc['from_name']),
              (data.StringVariable('From ID'), lambda doc: doc['from_id']),
              (data.StringVariable('Status ID'), lambda doc: doc['status_id']),
@@ -37,9 +39,11 @@ class FacebookOrangeAPI():
              (data.StringVariable('angry'), lambda doc: doc['angry']),
              (data.StringVariable('comments'), lambda doc: doc['comments']),
              (data.StringVariable('shares'), lambda doc: doc['shares']),
+             (data.StringVariable('top_reaction'), lambda doc: doc['top_reaction']),
+             (image_var, lambda doc: doc['picture']),
              (data.TimeVariable('Publication Date'), lambda doc: doc['status_published']),
              (data.TimeVariable('Publication Date UTC'), lambda doc: doc['status_published_utc'])]
-    text_features = [metas[0][0]]  
+    text_features = [post_metas[0][0]]
     title_indices = [-1]           
 
     def __init__(self, credentials, on_progress=None, should_break=None):
@@ -87,15 +91,26 @@ class FacebookOrangeAPI():
         d['status_published_utc'] = status_published
         d['status_published'] = self.utcToLocal(status_published)
         d['status_link'] = '' if 'link' not in status.keys() else status['link']
+        d['picture'] = status['full_picture'] if 'full_picture' in status.keys() else ''
 
-        for score in ['like','love','haha','wow','sad','angry','comments']:
+        topscore = 0
+        for score in ['like','love','haha','wow','sad','angry']:
             d[score] = status[score]['summary']['total_count'] if engagement else ''
+            if engagement:
+                d[score] = status[score]['summary']['total_count']
+                if int(d[score]) > topscore:
+                    topscore = int(d[score])
+                    d['top_reaction'] = score
+            else:
+                d[score] = ''
+                d['top_reaction'] = ''
+        d['comments'] = status['comments']['summary']['total_count'] if engagement else ''
         d['shares'] = status['shares']['count'] if 'shares' in status.keys() else ''   
 
         return d  
                                
     def fieldString(self, engagement=True):
-        field_string = 'message,from,link,created_time,type,name,id'
+        field_string = 'message,from,link,created_time,type,name,id,full_picture'
         
         if engagement:
             field_string += ',' + 'comments.limit(0).summary(true),shares.limit(0).summary(true)'
@@ -153,11 +168,11 @@ class FacebookOrangeAPI():
                 for doc in d:
                     n += 1
                     if max_documents is not None:
-                        if n >= max_documents:
+                        if n > max_documents:
                             break
                     yield doc
                 if max_documents is not None:
-                    if n >= max_documents:
+                    if n > max_documents:
                         break
         self.on_progress(100, 100)
 
@@ -170,7 +185,7 @@ class FacebookOrangeAPI():
             doc['status_published_utc'] = doc['status_published_utc'].strftime('%Y-%m-%dT%H:%M:%S')
             self.results.append(doc)
              
-        c = Corpus.from_documents(self.results, 'Facebook', self.attributes, self.class_vars, self.metas, self.title_indices)
+        c = Corpus.from_documents(self.results, 'Facebook', self.attributes, self.class_vars, self.post_metas, self.title_indices)
         c.set_text_features(self.text_features)
         return c
 

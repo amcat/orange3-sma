@@ -133,7 +133,7 @@ class OWFacebook(OWWidget):
     date_from = Setting(date(1900, 1, 1))
     date_to = datetime.now().date()
 
-    attributes = [feat.name for feat, _ in FacebookOrangeAPI.metas if
+    attributes = [feat.name for feat, _ in FacebookOrangeAPI.post_metas if
                   isinstance(feat, StringVariable)]
     text_includes = Setting([feat.name for feat in FacebookOrangeAPI.text_features])
 
