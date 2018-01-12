@@ -27,7 +27,7 @@ def parse_query(string):
 class OWQueryFilter(OWWidget):
     name = "Query Filter"
     description = "Subset a Corpus based on a query"
-    icon = "icons/DataSamplerA.svg"
+    icon = "icons/queryfilter.svg"
     priority = 10
 
     want_main_area = False

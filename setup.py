@@ -16,11 +16,13 @@ readme = path.join(here, "README.pypi")
 
 if __name__ == '__main__':
     setup(name = 'orange3sma',
-          description = "Provides access to the API of an AmCAT server and various content-analysis tools",
+          description = "Provides widgets for social media analytics",
           long_description = open(readme).read(),
           version = '0.1.3',
           packages = packages,
-          entry_points={"orange.widgets": "Social Media Analytics = orange3sma.widgets"},
+          entry_points={'orange3.addon': 'Social Media Analytics = orange3sma',
+                        "orange.widgets": "Social Media Analytics = orange3sma.widgets",
+                        'orange.widgets.tutorials': 'exampletutorials = orange3sma.tutorials'},
           author = 'Kasper Welbers and Wouter van Atteveldt',
           author_email = 'k.welbers@vu.nl',
           url = 'https://github.com/amcat/orange3sma',
