@@ -15,8 +15,8 @@ from orangecontrib.text.corpus import Corpus
 from orange3sma.facebook_orange_api import FacebookCredentials, FacebookOrangeAPI
 from orangecontrib.text.widgets.utils import CheckListLayout, QueryBox, DatePickerInterval, ListEdit,  gui_require, asynchronous
 
-DATE_OPTIONS = ["Last week", "Last month", "From", "Between"]
-LAST_WEEK, LAST_MONTH, DATE_FROM, DATE_BETWEEN = range(len(DATE_OPTIONS))
+DATE_OPTIONS = ["Last week", "Last month", "Last year", "From", "Between"]
+LAST_WEEK, LAST_MONTH, LAST_YEAR, DATE_FROM, DATE_BETWEEN = range(len(DATE_OPTIONS))
 
 
 class OWFacebook(OWWidget):
@@ -50,7 +50,7 @@ class OWFacebook(OWWidget):
             ## app login
             app_form = QFormLayout()
             app_form.setContentsMargins(5, 5, 5, 5)
-            app_info = gui.widgetLabel(app_login, 'To obtain an App ID and secret, register <a href=\"https://developers.facebook.com/?advanced_app_create=true\">here</a>. The information is on the app dashboard.')
+            app_info = gui.widgetLabel(app_login, 'To obtain an App ID and secret, <a href=\"https://developers.facebook.com/?advanced_app_create=true\">register</a> a new app (no actual app required). If you already registered an app you need to <a href=\"https://developers.facebook.com/apps/\">visit your app page</a>. The information is on the app dashboard.')
             app_info.setWordWrap(True);                
             app_info.setOpenExternalLinks(True)
             self.app_id_edit = gui.lineEdit(self, self, 'app_id_input', controlWidth=350)           
@@ -63,7 +63,7 @@ class OWFacebook(OWWidget):
             ## temp login
             temp_form = QFormLayout()
             temp_form.setContentsMargins(5, 5, 5, 5)
-            temp_info = gui.widgetLabel(temp_login, 'To obtain a temporary (2 hour) access token, visit <a href=\"https://developers.facebook.com/tools/explorer">here</a>. Copy the text from the "Access Token:" box.')
+            temp_info = gui.widgetLabel(temp_login, 'To obtain a temporary (1 hour) access token, visit <a href=\"https://developers.facebook.com/tools/explorer">here</a>. Copy the token (the long line of gibberish) from the "Access Token:" box.')
             temp_info.setWordWrap(True);
             temp_info.setOpenExternalLinks(True)
             self.temp_token_edit = gui.lineEdit(self, self, 'temp_token_input', controlWidth=350)   
@@ -133,9 +133,8 @@ class OWFacebook(OWWidget):
     date_from = Setting(date(1900, 1, 1))
     date_to = datetime.now().date()
 
-    attributes = [feat.name for feat, _ in FacebookOrangeAPI.post_metas if
-                  isinstance(feat, StringVariable)]
-    text_includes = Setting([feat.name for feat in FacebookOrangeAPI.text_features])
+    attributes = ['Message','Link name']
+    text_includes = Setting(['Message'])
 
     class Warning(OWWidget.Warning):
         no_text_fields = Msg('Text features are inferred when none are selected.')
@@ -159,6 +158,7 @@ class OWFacebook(OWWidget):
 
         # Query
         query_box = gui.widgetBox(self.controlArea, 'Query', addSpace=True)
+        gui.label(query_box, self, 'Page IDs (or page URLs)')
         query_box.layout().addWidget(ListEdit(self, 'page_ids',
                          'One page ID per line', 80, self))
 
@@ -176,8 +176,14 @@ class OWFacebook(OWWidget):
         mode_box = gui.widgetBox(self.controlArea, box=True)
         mode_box_h = gui.hBox(mode_box)
         gui.radioButtonsInBox(mode_box_h, self, 'mode', btnLabels=['only posts from page itself', 'all public posts on page'], orientation=2, label='Mode:')
-        gui.radioButtonsInBox(mode_box_h, self, 'accumulate', btnLabels=['new results', 'add to previous results'], orientation=2, label='On search:')
+        #gui.radioButtonsInBox(mode_box_h, self, 'accumulate', btnLabels=['new results', 'add to previous results'], orientation=2, label='On search:')
         gui.lineEdit(mode_box_h, self, 'max_documents', label='Max docs per page:', valueType=str, controlWidth=50)
+
+        # Text includes features
+        self.controlArea.layout().addWidget(
+            CheckListLayout('Text includes', self, 'text_includes',
+                            self.attributes,
+                            cols=2, callback=self.set_text_features))
 
         # Output
         info_box = gui.hBox(self.controlArea, 'Output')
@@ -231,6 +237,8 @@ class OWFacebook(OWWidget):
             self.date_from = datetime.now().date() - timedelta(7)
         if self.date_option == LAST_MONTH:
             self.date_from = datetime.now().date() - relativedelta.relativedelta(months=1)
+        if self.date_option == LAST_YEAR:
+            self.date_from = datetime.now().date() - relativedelta.relativedelta(years=1)
         if self.date_option in [DATE_FROM]:
             self.date_from = self.date_from
         if self.date_option in [DATE_BETWEEN]:
