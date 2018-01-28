@@ -46,9 +46,9 @@ class Index(object):
                 for q in queries:
                     q = QueryParser("text", self.index.schema).parse(q)
                     matcher = q.matcher(searcher)
+                    bd = boostdict(matcher)
                     while matcher.is_active():
                         docnum = searcher.reader().stored_fields(matcher.id())['doc_i']
-                        bd = boostdict(matcher)
                         for s in matcher.spans():
                             results[docnum] += bd[s] if s in bd else 1
                         matcher.next()
@@ -134,14 +134,15 @@ def boostdict(m, bd={}):
     """
     Get a dictionary with boost (i.e. weight) scores (dict values) for different spans (dict keys)
     """
-    if hasattr(m, 'boost'):
-        for s in m.spans():
-            bd[s] = m.boost
-            return bd
-    if hasattr(m, 'children'):
-        children = m.children()
-        for child in m.children():
-            bd = boostdict(child, bd)
+    if m.is_active():
+        if hasattr(m, 'boost'):
+            for s in m.spans():
+                bd[s] = m.boost
+                return bd
+        if hasattr(m, 'children'):
+            children = m.children()
+            for child in m.children():
+                bd = boostdict(child, bd)
     return bd
 
 
