@@ -1,6 +1,7 @@
 import multiprocessing
 from tempfile import TemporaryDirectory
 from threading import Lock
+from collections import defaultdict
 
 from progressmonitor import monitored, ProgressMonitor
 from whoosh import scoring
@@ -9,6 +10,7 @@ from whoosh.index import create_in
 from whoosh.fields import *
 from whoosh.qparser.default import QueryParser
 from orangecontrib.text.corpus import Corpus
+
 
 _GLOBAL_LOCK = Lock()
 
@@ -19,7 +21,7 @@ class Index(object):
     def __init__(self, corpus, procs=2, limitmb=256):
         self.tokens = corpus.tokens
         self.tempdir = TemporaryDirectory(prefix="orange3sma_index")
-        schema = Schema(text=TEXT(stored=False, analyzer=SpaceSeparatedTokenizer()), doc_i=NUMERIC(int, 64, signed=False, stored=True))
+        schema = Schema(text=TEXT(stored=False, analyzer=SpaceSeparatedTokenizer(), phrase=True), doc_i=NUMERIC(int, 64, signed=False, stored=True))
         self.index = create_in(self.tempdir.name, schema)
         w = self.index.writer(limitmb=limitmb, procs=procs, multisegment=(procs > 1))
         for doc_i, doc_tokens in enumerate(self.tokens):
@@ -33,13 +35,27 @@ class Index(object):
         :param frequencies: If true, return pairs of (docnum, frequency) rather than only docnum
         :return: sequence of document numbers (and freqs, if frequencies is True)
         """
-        query = QueryParser("text", self.index.schema).parse(query)
-        with self.index.searcher(weighting=scoring.Frequency) as searcher:
-            results = searcher.search(query, limit=None, scored=frequencies, sortedby=None)
 
-            if frequencies:                
-                return [(results[i]['doc_i'], int(results.score(i))) for i in range(results.scored_length())]
+        with self.index.searcher(weighting=scoring.Frequency) as searcher:
+            if frequencies:
+                ## for some reason, using searcher.search counts all individual occurrences of the terms in a phrase ("term1 term2")
+                ## after the phrase occurs at least once. So for frequencies, we use this lengthy alternative
+                ## (I expect that somewhere a setting is hidden to simply fix this with searcher.search, but no clue yet)
+                results = defaultdict(lambda:0)
+                queries = divide_query(query)
+                for q in queries:
+                    q = QueryParser("text", self.index.schema).parse(q)
+                    matcher = q.matcher(searcher)
+                    while matcher.is_active():
+                        docnum = searcher.reader().stored_fields(matcher.id())['doc_i']
+                        bd = boostdict(matcher)
+                        for s in matcher.spans():
+                            results[docnum] += bd[s] if s in bd else 1
+                        matcher.next()
+                return [(k,v) for k,v in results.items()]
             else:
+                query = QueryParser("text", self.index.schema).parse(query)
+                results = searcher.search(query, limit=None, scored=False, sortedby=None)
                 return [results[i]['doc_i'] for i in range(len(results))]
 
     def get_context(self, query: str, window: int = 30):
@@ -95,6 +111,39 @@ def get_index(corpus: Corpus, monitor: ProgressMonitor, multiple_processors=True
             ix = Index(corpus, procs=procs, **kargs)
             corpus._orange3sma_index = ix
     return ix
+
+
+def divide_query(query):
+    """
+    divide query into parts connected by OR statements (that can be executed separately)
+    necessary because for long queries, whoosh uses an ArrayUnionMatcher which makes the
+    frequency calculation very complicated.
+    """
+    queries = ['']
+    querylist = re.findall('\([^\)]*\)|\S+', query)
+    for q in querylist:
+        if q == 'OR':
+            queries.append('')
+            continue
+        else:
+            if queries[-1]: queries[-1] += ' '
+            queries[-1] += q
+    return queries
+
+def boostdict(m, bd={}):
+    """
+    Get a dictionary with boost (i.e. weight) scores (dict values) for different spans (dict keys)
+    """
+    if hasattr(m, 'boost'):
+        for s in m.spans():
+            bd[s] = m.boost
+            return bd
+    if hasattr(m, 'children'):
+        children = m.children()
+        for child in m.children():
+            bd = boostdict(child, bd)
+    return bd
+
 
 if __name__ == '__main__':
     from Orange import data

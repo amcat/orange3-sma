@@ -60,13 +60,13 @@ class OWPosFilter(OWWidget):
 
     def filter_pos(self):
         self.pos = [self.pos_options[i] for i in self.pos_i]
+        valid_docs = []
         if self.corpus.pos_tags is not None:
             out = self.corpus.copy()
             out._tokens = self.corpus._tokens.copy()
             out.pos_tags = self.corpus.pos_tags.copy()
 
             self.progressBarInit(None)
-            valid_docs = []
             n = len(self.corpus.pos_tags)
             for i, d in enumerate(self.corpus.pos_tags):
 
