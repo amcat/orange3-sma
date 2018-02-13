@@ -27,24 +27,25 @@ class FacebookOrangeAPI():
     image_var.attributes["type"] = "image"
     post_metas = [(data.StringVariable('Message'), lambda doc: doc['status_message']),
              (data.StringVariable('From'), lambda doc: doc['from_name']),
+             (data.StringVariable('likes'), lambda doc: doc['like']),
+             (data.StringVariable('comments'), lambda doc: doc['comments']),
+             (data.StringVariable('shares'), lambda doc: doc['shares']),
+             (data.StringVariable('top emotion'), lambda doc: doc['top_reaction']),
+             (data.StringVariable('Link name'), lambda doc: doc['link_name']),
+             (image_var, lambda doc: doc['picture']),
+             (data.StringVariable('link'), lambda doc: doc['status_link']),
              (data.StringVariable('From ID'), lambda doc: doc['from_id']),
              (data.StringVariable('Status ID'), lambda doc: doc['status_id']),
              (data.StringVariable('Status type'), lambda doc: doc['status_type']),
-             (data.StringVariable('Status link'), lambda doc: doc['status_link']),
-             (data.StringVariable('like'), lambda doc: doc['like']),
-             (data.StringVariable('love'), lambda doc: doc['love']),
-             (data.StringVariable('haha'), lambda doc: doc['haha']),
-             (data.StringVariable('wow'), lambda doc: doc['wow']),
-             (data.StringVariable('sad'), lambda doc: doc['sad']),
-             (data.StringVariable('angry'), lambda doc: doc['angry']),
-             (data.StringVariable('comments'), lambda doc: doc['comments']),
-             (data.StringVariable('shares'), lambda doc: doc['shares']),
-             (data.StringVariable('top_reaction'), lambda doc: doc['top_reaction']),
-             (image_var, lambda doc: doc['picture']),
              (data.TimeVariable('Publication Date'), lambda doc: doc['status_published']),
-             (data.TimeVariable('Publication Date UTC'), lambda doc: doc['status_published_utc'])]
+             (data.TimeVariable('Publication Date UTC'), lambda doc: doc['status_published_utc']),
+             (data.StringVariable('emotion angry'), lambda doc: doc['angry']),
+             (data.StringVariable('emotion love'), lambda doc: doc['love']),
+             (data.StringVariable('emotion haha'), lambda doc: doc['haha']),
+             (data.StringVariable('emotion wow'), lambda doc: doc['wow']),
+             (data.StringVariable('emotion sad'), lambda doc: doc['sad'])]
     text_features = [post_metas[0][0]]
-    title_indices = [-1]           
+    title_indices = [-1]
 
     def __init__(self, credentials, on_progress=None, should_break=None):
         self.utc_datecor = datetime.utcnow() - datetime.now() 
@@ -94,7 +95,12 @@ class FacebookOrangeAPI():
         d['picture'] = status['full_picture'] if 'full_picture' in status.keys() else ''
 
         topscore = 0
-        for score in ['like','love','haha','wow','sad','angry']:
+        d['like'] = status['like']['summary']['total_count'] if engagement else ''
+        d['comments'] = status['comments']['summary']['total_count'] if engagement else ''
+        d['shares'] = status['shares']['count'] if 'shares' in status.keys() else ''
+
+        d['top_reaction'] = ''
+        for score in ['love','haha','wow','sad','angry']:
             d[score] = status[score]['summary']['total_count'] if engagement else ''
             if engagement:
                 d[score] = status[score]['summary']['total_count']
@@ -104,8 +110,6 @@ class FacebookOrangeAPI():
             else:
                 d[score] = ''
                 d['top_reaction'] = ''
-        d['comments'] = status['comments']['summary']['total_count'] if engagement else ''
-        d['shares'] = status['shares']['count'] if 'shares' in status.keys() else ''   
 
         return d  
                                
@@ -154,7 +158,9 @@ class FacebookOrangeAPI():
         progress_pct = 1 / float(n_pages)
         
         for page_i in range(0,n_pages):    
-            page_id = page_ids[page_i]
+            page_id = page_ids[page_i].strip()
+            if page_id == '': return
+            if '/' in page_id: page_id = page_id.split('/')[-1]
             page_progress = progress_pct * page_i 
             n = 0
             for d in self.getStatuses(page_id, mode, since, until):

@@ -18,7 +18,7 @@ if __name__ == '__main__':
     setup(name = 'orange3sma',
           description = "Provides widgets for social media analytics",
           long_description = open(readme).read(),
-          version = '0.1.3',
+          version = '0.1.31',
           packages = packages,
           entry_points={'orange3.addon': 'Social Media Analytics = orange3sma',
                         "orange.widgets": "Social Media Analytics = orange3sma.widgets",

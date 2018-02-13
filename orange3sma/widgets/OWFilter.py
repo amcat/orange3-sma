@@ -24,8 +24,10 @@ def parse_query(string):
     return l.strip(), q.strip()
 
 
-class OWQueryFilter(OWWidget):
-    name = "Query Filter"
+QUERY_MODES = ['count', 'filter']
+
+class OWQuerySearch(OWWidget):
+    name = "Query Search"
     description = "Subset a Corpus based on a query"
     icon = "icons/queryfilter.svg"
     priority = 10
@@ -35,10 +37,12 @@ class OWQueryFilter(OWWidget):
 
     queries = Setting('')
     dictionary_text = Setting('')
-    include_counts = Setting(False)
     include_unmatched = Setting(False)
     context_window = Setting('')
-    dictionary_on = True
+    dictionary_on = False
+    window_disabled_text = ''
+
+    query_mode = Setting(0)
 
     class Inputs:
         data = Input("Corpus", Corpus)
@@ -67,16 +71,22 @@ class OWQueryFilter(OWWidget):
         self.dictionarybox.setTextColor(QColor(100, 100, 100))
         self.dictionarybox.setReadOnly(True)
         self.import_box.layout().addWidget(self.dictionarybox)
-        
+
         query_box = gui.widgetBox(self.controlArea, 'Query', addSpace=True)
         self.querytextbox = ListEdit(self, 'queries', '', 80, self)
         query_box.layout().addWidget(self.querytextbox)
-       
-        gui.checkBox(query_box, self, 'include_counts', label="Output query counts")
-        gui.checkBox(query_box, self, 'include_unmatched', label="Include unmatched documents")
 
-        gui.lineEdit(query_box, self, "context_window", "Output words in context window",
+        query_parameter_box = gui.hBox(self.controlArea, self)
+        gui.radioButtonsInBox(query_parameter_box, self, 'query_mode', btnLabels=QUERY_MODES, box="Query mode", callback=self.toggle_mode)
+
+        self.count_mode_parameters = gui.vBox(query_parameter_box, self)
+        gui.checkBox(self.count_mode_parameters, self, 'include_unmatched', label="Include unmatched documents")
+
+        self.filter_mode_parameters = gui.widgetBox(query_parameter_box, self)
+        gui.lineEdit(self.filter_mode_parameters, self, "context_window", 'Output words in context window',
                      validator=QIntValidator())
+
+        self.toggle_mode()
 
         info_box = gui.hBox(self.controlArea, 'Status')
         self.status = 'Waiting for input'
@@ -86,8 +96,11 @@ class OWQueryFilter(OWWidget):
                                         self.start_stop,
                                         focusPolicy=Qt.NoFocus)
 
-    @gui_require('queries', 'no_query')
     def run_search(self):
+        if not self.dictionary_on and not self.queries:
+            self.Error.no_query()
+        else:
+            self.Error.no_query.clear()
         if self.corpus is None:
             self.info.setText('Connect an input corpus to start querying')
             self.Outputs.sample.send(None)
@@ -100,23 +113,35 @@ class OWQueryFilter(OWWidget):
             self.search.stop()
         else:
             self.run_search()
-        
+
     def import_dictionary(self):
-        self.dictionary_text = []   
+        self.dictionary_text = []
         for label, query in self.dictionary:
             q = label.strip() + '# ' + query.strip() if label else query.strip()
             self.dictionary_text.append(q)
         self.dictionarybox.setText('\n'.join(self.dictionary_text))
-    
+        self.Error.no_query.clear()
+
+    def toggle_mode(self):
+        if QUERY_MODES[self.query_mode] == 'count':
+            self.filter_mode_parameters.setVisible(False)
+            self.count_mode_parameters.setVisible(True)
+        else:
+            self.filter_mode_parameters.setVisible(True)
+            self.count_mode_parameters.setVisible(False)
+
     @asynchronous
     def search(self):
         indices = [0]
-        queries = self.dictionary_text + self.queries if self.dictionary_on else self.queries
+        queries = self.queries
+        if self.dictionary_on and type(self.dictionary_text) is list:
+            queries = queries + self.dictionary_text
+
 
         with progress_monitor(self, 'status').task(100) as monitor:
             index = get_index(self.corpus, monitor=monitor.submonitor(50))
 
-            if not self.include_counts:
+            if QUERY_MODES[self.query_mode] == 'filter':
                 # simple search
                 query = " OR ".join('({})'.format(q) for q in queries)
 
@@ -132,6 +157,7 @@ class OWQueryFilter(OWWidget):
                         selected.append(i)
                     sample = sample[selected]
 
+
                 o = np.ones(len(self.corpus))
                 o[selected] = 0
                 remaining = np.nonzero(o)[0]
@@ -142,9 +168,9 @@ class OWQueryFilter(OWWidget):
                 seen = set()
                 for q in queries:
                     label, q = parse_query(q)
-
                     # todo: implement as sparse matrix!
-                    scores = np.zeros(len(sample), dtype=np.int)
+                    scores = np.zeros(len(sample), dtype=np.float)
+
                     for i, j in index.search(q, frequencies=True):
                         seen.add(i)
                         scores[i] = j
@@ -182,11 +208,12 @@ class OWQueryFilter(OWWidget):
             self.import_dictionary()
         else:
             self.dictionary_on = False
+            self.dictionary_text = []
             self.import_box.setVisible(False)
-            
+
 if __name__ == '__main__':
     app = QApplication([])
-    widget = OWQueryFilter()
+    widget = OWQuerySearch()
     widget.show()
     app.exec()
     widget.saveSettings()
