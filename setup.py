@@ -7,10 +7,11 @@ from setuptools import setup, find_packages
 
 NAME = "Orange3-sma"
 
-VERSION = "0.1.1"
+VERSION = "0.2.1"
 
 DESCRIPTION = "Provides widgets for social media analytics"
-LONG_DESCRIPTION = open(path.join(path.dirname(__file__), 'README.md')).read()
+README_FILE = path.join(path.dirname(__file__), 'README.md')
+LONG_DESCRIPTION = open(README_FILE).read()
 
 LICENSE = "BSD"
 
@@ -18,6 +19,7 @@ KEYWORDS = (
     # [PyPi](https://pypi.python.org) packages with keyword "orange3 add-on"
     # can be installed using the Orange Add-on Manager
     'orange3 add-on',
+    'orange3-sma',
 )
 
 PACKAGES = find_packages()
