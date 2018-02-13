@@ -1,35 +1,101 @@
-from setuptools import setup
+#!/usr/bin/env python
 
-from os import path
-from pip.req import parse_requirements
-from pip.download import PipSession
+from os import path, walk
 
-here = path.abspath(path.join(path.dirname(path.abspath(__file__))))
+import sys
+from setuptools import setup, find_packages
 
-requirements_txt = path.join(here, "requirements.txt")
-requirements = parse_requirements(requirements_txt, session=PipSession())
-requirements = [str(ir.req) for ir in requirements]
+NAME = "Social Media Analytics"
 
-packages = setuptools.find_packages(here, exclude=["*.tests"])
+VERSION = "0.1.1"
 
-readme = path.join(here, "README.pypi")
+DESCRIPTION = "Provides widgets for social media analytics"
+LONG_DESCRIPTION = open(path.join(path.dirname(__file__), 'README.md')).read()
+
+LICENSE = "BSD"
+
+KEYWORDS = (
+    # [PyPi](https://pypi.python.org) packages with keyword "orange3 add-on"
+    # can be installed using the Orange Add-on Manager
+    'orange3 add-on',
+)
+
+PACKAGES = find_packages()
+
+PACKAGE_DATA = {
+    'orangecontrib.sma': ['tutorials/*.ows'],
+    'orangecontrib.sma.widgets': ['icons/*'],
+}
+
+DATA_FILES = [
+    # Data files that will be installed outside site-packages folder
+]
+
+INSTALL_REQUIRES = [
+    'Orange3', 'orange3-text', 'whoosh', 'amcatclient>=3.4.10', 'progressmonitor>=0.5'
+]
+
+ENTRY_POINTS = {
+    # Entry points that marks this package as an orange add-on. If set, addon will
+    # be shown in the add-ons manager even if not published on PyPi.
+    'orange3.addon': (
+        'Social Media Analytics = orangecontrib.sma',
+    ),
+    # Entry point used to specify packages containing tutorials accessible
+    # from welcome screen. Tutorials are saved Orange Workflows (.ows files).
+    'orange.widgets.tutorials': (
+        # Syntax: any_text = path.to.package.containing.tutorials
+        'Social Media Analytics = orangecontrib.sma.tutorials',
+    ),
+
+    # Entry point used to specify packages containing widgets.
+    'orange.widgets': (
+        # Syntax: category name = path.to.package.containing.widgets
+        # Widget category specification can be seen in
+        #    orangecontrib/example/widgets/__init__.py
+        'Social Media Analytics = orangecontrib.sma.widgets',
+    ),
+
+     #Register widget help
+    "orange.canvas.help": (
+        'html-index = orangecontrib.sma.widgets:WIDGET_HELP_PATH',)
+}
+
+NAMESPACE_PACKAGES = ["orangecontrib"]
+
+TEST_SUITE = "orangecontrib.sma.tests.suite"
+
+
+def include_documentation(local_dir, install_dir):
+    global DATA_FILES
+    if 'bdist_wheel' in sys.argv and not path.exists(local_dir):
+        print("Directory '{}' does not exist. "
+              "Please build documentation before running bdist_wheel."
+              .format(path.abspath(local_dir)))
+        sys.exit(0)
+
+    doc_files = []
+    for dirpath, dirs, files in walk(local_dir):
+        doc_files.append((dirpath.replace(local_dir, install_dir),
+                          [path.join(dirpath, f) for f in files]))
+    DATA_FILES.extend(doc_files)
 
 if __name__ == '__main__':
-    setup(name = 'orange3sma',
-          description = "Provides widgets for social media analytics",
-          long_description = open(readme).read(),
-          version = '0.1.31',
-          packages = packages,
-          entry_points={'orange3.addon': 'Social Media Analytics = orange3sma',
-                        "orange.widgets": "Social Media Analytics = orange3sma.widgets",
-                        'orange.widgets.tutorials': 'exampletutorials = orange3sma.tutorials'},
-          author = 'Kasper Welbers and Wouter van Atteveldt',
-          author_email = 'k.welbers@vu.nl',
-          url = 'https://github.com/amcat/orange3sma',
-          install_requires = requirements,
-          keywords = ['orange3sma', 'orange3 add-on'],
-
-          include_package_data=True,
-          exclude_package_data = {'': ['tests/*']}
-          )
-
+    include_documentation('doc/build/html', 'help/orange3_SMA')
+    setup(
+        name=NAME,
+        version=VERSION,
+        description=DESCRIPTION,
+        long_description=LONG_DESCRIPTION,
+        license=LICENSE,
+        packages=PACKAGES,
+        package_data=PACKAGE_DATA,
+        data_files=DATA_FILES,
+        install_requires=INSTALL_REQUIRES,
+        entry_points=ENTRY_POINTS,
+        keywords=KEYWORDS,
+        namespace_packages=NAMESPACE_PACKAGES,
+        test_suite=TEST_SUITE,
+        include_package_data=True,
+        zip_safe=False,
+    )

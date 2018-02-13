@@ -1,6 +1,7 @@
 from datetime import datetime, date
 from requests import HTTPError
 
+
 from AnyQt.QtCore import Qt
 from AnyQt.QtWidgets import QApplication, QFormLayout, QLineEdit
 from Orange.data import StringVariable, TimeVariable, DiscreteVariable

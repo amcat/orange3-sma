@@ -1,6 +1,6 @@
 import numpy as np
-import multiprocessing
 import re
+
 from AnyQt.QtCore import Qt
 from AnyQt.QtGui import QIntValidator, QColor
 from AnyQt.QtWidgets import QApplication, QCheckBox
@@ -10,12 +10,11 @@ from Orange.widgets.settings import Setting
 from Orange.widgets.widget import OWWidget, Input, Output, Msg
 from orangecontrib.text.corpus import Corpus
 from orangecontrib.text.widgets.utils.concurrent import asynchronous
-from orangecontrib.text.widgets.utils.decorators import gui_require
 from orangecontrib.text.widgets.utils.widgets import ListEdit
 
-from orange3sma.index import get_index
-from orange3sma.progress import progress_monitor
-from orange3sma.widgets.OWDictionary import Dictionary
+from orangecontrib.sma.index import get_index
+from orangecontrib.sma.progress import progress_monitor
+from orangecontrib.sma.widgets.OWDictionary import Dictionary
 
 
 def parse_query(string):

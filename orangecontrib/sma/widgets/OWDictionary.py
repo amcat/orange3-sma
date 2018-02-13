@@ -1,18 +1,11 @@
-import numpy as np
-import multiprocessing, re
+import re
+
 from AnyQt.QtWidgets import QApplication, QGridLayout, QLabel, QLineEdit, QSizePolicy, QScrollArea, QCheckBox
 from AnyQt.QtCore import Qt, QTimer, QSize
-from AnyQt.QtGui import QIntValidator
 import Orange
 from Orange.widgets import gui
 from Orange.widgets.settings import Setting
 from Orange.widgets.widget import OWWidget, Input, Output, Msg
-from orangecontrib.text.corpus import Corpus
-from orangecontrib.text.widgets.utils.concurrent import asynchronous
-from orangecontrib.text.widgets.utils.decorators import gui_require
-from orangecontrib.text.widgets.utils.widgets import ListEdit
-
-from orange3sma.index import Index
 
 class OWDictionary(OWWidget):
     name = "Dictionary"

@@ -1,5 +1,4 @@
 import numpy as np
-from Orange.data.table import Table
 from Orange.widgets.settings import Setting
 
 from AnyQt.QtWidgets import QCheckBox
@@ -9,9 +8,6 @@ from Orange.widgets.widget import OWWidget, Msg
 
 from Orange.widgets import gui
 
-
-from orange3sma.index import get_index
-from orange3sma.progress import progress_monitor
 from orangecontrib.text import Corpus
 
 
@@ -97,6 +93,7 @@ class OWPosFilter(OWWidget):
         else:
             self.Error.no_tokens.clear()
             self.Outputs.out_corpus.send(out)
+
 
     def get_pos_options(self):
         pos = set()

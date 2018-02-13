@@ -1,6 +1,7 @@
 from collections import OrderedDict
 from typing import Mapping
 
+
 import numpy as np
 from Orange.data.domain import Domain
 from Orange.data.table import Table
@@ -10,11 +11,10 @@ from Orange.widgets.widget import OWWidget
 from Orange.widgets import gui
 from orangecontrib.text.widgets.utils.concurrent import asynchronous
 from progressmonitor import monitored, ProgressMonitor
-from AnyQt.QtWidgets import QTableView
 
-from orange3sma.index import get_index
-from orange3sma.progress import progress_monitor
 from orangecontrib.text import Corpus
+from orangecontrib.sma.index import get_index
+from orangecontrib.sma.progress import progress_monitor
 
 
 def _create_table(words, scores: Mapping[str, np.array]) -> Table:

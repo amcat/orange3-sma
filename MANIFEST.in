@@ -1,0 +1,2 @@
+include orangecontrib/sma/tutorials/*.ows
+include orangecontrib/sma/widgets/icons/*

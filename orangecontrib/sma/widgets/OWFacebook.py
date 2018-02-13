@@ -1,10 +1,10 @@
 from datetime import datetime, timedelta, date
 from dateutil import relativedelta
 
+
 from AnyQt.QtCore import Qt
 from AnyQt.QtWidgets import QApplication, QFormLayout, QLabel, QLineEdit, QGridLayout
 
-from Orange.data import StringVariable
 from Orange.widgets.settings import Setting
 from Orange.widgets.widget import OWWidget, Msg
 from Orange.widgets.credentials import CredentialManager
@@ -12,7 +12,7 @@ from Orange.widgets import gui
 from Orange.widgets.widget import Output
 
 from orangecontrib.text.corpus import Corpus
-from orange3sma.facebook_orange_api import FacebookCredentials, FacebookOrangeAPI
+from orangecontrib.sma.facebook_orange_api import FacebookCredentials, FacebookOrangeAPI
 from orangecontrib.text.widgets.utils import CheckListLayout, QueryBox, DatePickerInterval, ListEdit,  gui_require, asynchronous
 
 DATE_OPTIONS = ["Last week", "Last month", "Last year", "From", "Between"]
