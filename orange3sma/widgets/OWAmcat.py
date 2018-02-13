@@ -3,7 +3,7 @@ from requests import HTTPError
 
 from AnyQt.QtCore import Qt
 from AnyQt.QtWidgets import QApplication, QFormLayout, QLineEdit
-from Orange.data import StringVariable, TimeVariable
+from Orange.data import StringVariable, TimeVariable, DiscreteVariable
 from Orange.widgets import gui
 from Orange.widgets.credentials import CredentialManager
 from Orange.widgets.settings import Setting
@@ -11,7 +11,7 @@ from Orange.widgets.widget import OWWidget, Msg
 from Orange.widgets.widget import Output
 from amcatclient import AmcatAPI, APIError
 from orangecontrib.text.corpus import Corpus
-from orangecontrib.text.widgets.utils import DatePickerInterval, ListEdit, gui_require, \
+from orangecontrib.text.widgets.utils import CheckListLayout, DatePickerInterval, ListEdit, gui_require, \
     asynchronous
 from orangecontrib.text.widgets.utils.concurrent import StopExecution
 
@@ -115,7 +115,7 @@ class OWAmcat(OWWidget):
     date_from = Setting(date(1900, 1, 1))
     date_to = Setting(datetime.now().date())
 
-    text_includes = Setting(['Headline', 'Content'])
+    text_includes = Setting(['Headline', 'Byline', 'Content'])
 
     class Warning(OWWidget.Warning):
         no_text_fields = Msg('Text features are inferred when none are selected.')
@@ -159,6 +159,12 @@ class OWAmcat(OWWidget):
                                margin=(0, 3, 0, 0))
         date_changed()
 
+        # Text includes features
+        self.controlArea.layout().addWidget(
+            CheckListLayout('Text includes', self, 'text_includes',
+                            ['Headline','Byline', 'Content','Section'],
+                            cols=2, callback=self.set_text_features))
+
         # Output
         info_box = gui.hBox(self.controlArea, 'Output')
         gui.label(info_box, self, 'Articles: %(output_info)s')
@@ -200,7 +206,7 @@ class OWAmcat(OWWidget):
     @asynchronous
     def search(self):
         self.Warning.search_failed.clear()
-        columns = ['id', 'date', 'medium', 'headline', 'text']
+        columns = ['id', 'date', 'medium', 'headline', 'byline', 'section', 'text','creator']
         max_documents = int(self.max_documents) if not self.max_documents == '' else None
         
         if not self.query and self.date_option == DATE_NONE:
@@ -274,9 +280,12 @@ class OWAmcat(OWWidget):
 
 
 CORPUS_METAS =[(StringVariable('Headline'), lambda doc: doc.get('headline', '')),
+             (StringVariable('Byline'), lambda doc: doc.get('byline', '')),
              (StringVariable('Content'), lambda doc: doc.get('text', '')),
+             (StringVariable('Section'), lambda doc: doc.get('section', '')),
              (StringVariable('Article_id'), lambda doc: doc['id']),
-             (StringVariable('Medium'), lambda doc: doc.get('medium', '')),
+             (StringVariable('Creator'), lambda doc: doc.get('creator','')),
+             (DiscreteVariable('Medium'), lambda doc: doc.get('medium', '')),
              (TimeVariable('Publication Date'), lambda doc: doc.get('date', ''))]
 
 def _corpus_from_results(docs):

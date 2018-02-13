@@ -7,8 +7,10 @@ from Orange.data.table import Table
 from Orange.data.variable import StringVariable, ContinuousVariable
 from Orange.widgets.utils.signals import Input, Output
 from Orange.widgets.widget import OWWidget
+from Orange.widgets import gui
 from orangecontrib.text.widgets.utils.concurrent import asynchronous
 from progressmonitor import monitored, ProgressMonitor
+from AnyQt.QtWidgets import QTableView
 
 from orange3sma.index import get_index
 from orange3sma.progress import progress_monitor
@@ -36,6 +38,7 @@ def compare(corpus: Corpus, reference_corpus: Corpus, monitor: ProgressMonitor):
     index = get_index(corpus, monitor=monitor.submonitor(33))
     ref_index = get_index(reference_corpus, monitor=monitor.submonitor(33))
 
+
     with index.reader() as r, ref_index.reader() as r2:
         words = list(set(r.field_terms("text")) | set(r2.field_terms("text")))
         n = len(words)
@@ -55,11 +58,13 @@ def compare(corpus: Corpus, reference_corpus: Corpus, monitor: ProgressMonitor):
     relc, relcr = relfreq(counts), relfreq(refcounts)
     over = relc / relcr
     return _create_table(words, OrderedDict([
+            ("overrepresentation", over),
+            ("percent", relc),
             ("frequency", counts),
             ("docfreq", docfreqs),
-            ("frequency_ref", refcounts),
-            ("docfreq_ref", refdocfreqs),
-            ("overrepresentation", over),
+            ("ref_percent", relcr),
+            ("ref_frequency", refcounts),
+            ("ref_docfreq", refdocfreqs),
        ]))
 
 
@@ -112,6 +117,9 @@ class OWCorpusStatistics(OWWidget):
 
         self.corpus = None
         self.reference_corpus = None
+
+        box = gui.widgetBox(self.controlArea, "Info")
+        self.info = gui.widgetLabel(box, 'Output to Data Table widget to view results')
 
     @asynchronous
     def calculate(self):

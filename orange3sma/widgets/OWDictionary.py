@@ -146,11 +146,13 @@ class OWDictionary(OWWidget):
             self.query_edits.append([])
             n_lines = len(self.query_edits)
                             
-            label_edit = gui.LineEditWFocusOut(self, self.query_changed)    
+            label_edit = gui.LineEditWFocusOut(self, self.query_changed)
+            label_edit.setMaxLength(500000)
             self.query_edits[-1].append(label_edit)
             self.queries_box.addWidget(label_edit, n_lines, 1)
 
             query_edit = gui.LineEditWFocusOut(self, self.query_changed)
+            query_edit.setMaxLength(500000)
             self.query_edits[-1].append(query_edit)
             self.queries_box.addWidget(query_edit, n_lines, 2)
 
@@ -231,7 +233,7 @@ class OWDictionary(OWWidget):
             self.querytable = Dictionary(data)
             self.querytable_attr = self.querytable.attrnames()
             self.querytable_meta = self.querytable.metanames()
-            self.querytable_vars = self.querytable_attr + self.querytable_metas
+            self.querytable_vars = self.querytable_attr + self.querytable_meta
         else:
             self.querytable = None
             self.querytable_attr, self.querytable_metas, self.querytable_vars = [], [], []
