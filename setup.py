@@ -5,7 +5,7 @@ from os import path, walk
 import sys
 from setuptools import setup, find_packages
 
-NAME = "Social Media Analytics"
+NAME = "Orange3-sma"
 
 VERSION = "0.1.1"
 
