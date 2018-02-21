@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, date
 from requests import HTTPError
 
@@ -75,6 +76,7 @@ class OWAmcat(OWWidget):
                     api = AmcatAPI(self.host_input, self.user_input, self.passwd_input, token)
                     if api.token is None: api = None
                 except (APIError, HTTPError) as e:
+                    logging.exception("Error on getting credentials")
                     api = None
             else:
                 api = None
@@ -235,6 +237,7 @@ class OWAmcat(OWWidget):
                 return _corpus_from_results(results)
         except APIError:
             self.Warning.search_failed()
+            logging.exception("Error on searching")
         
 
     @search.callback(should_raise=True)

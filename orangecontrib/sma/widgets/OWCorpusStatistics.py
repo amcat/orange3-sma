@@ -14,8 +14,6 @@ from progressmonitor import monitored, ProgressMonitor
 
 from orangecontrib.text import Corpus
 from orangecontrib.sma.index import get_index
-from orangecontrib.sma.progress import progress_monitor
-
 
 def _create_table(words, scores: Mapping[str, np.array]) -> Table:
     """
@@ -37,7 +35,6 @@ def _create_table(words, scores: Mapping[str, np.array]) -> Table:
 def compare(corpus: Corpus, reference_corpus: Corpus, monitor: ProgressMonitor):
     index = get_index(corpus, monitor=monitor.submonitor(33))
     ref_index = get_index(reference_corpus, monitor=monitor.submonitor(33))
-
 
     with index.reader() as r, ref_index.reader() as r2:
         words = list(set(r.field_terms("text")) | set(r2.field_terms("text")))
@@ -123,16 +120,24 @@ class OWCorpusStatistics(OWWidget):
 
     @asynchronous
     def calculate(self):
-        if self.reference_corpus:
-            t = compare(self.corpus, self.reference_corpus, monitor=progress_monitor(self))
-        else:
-            t = frequencies(self.corpus, monitor=progress_monitor(self))
-        self.progressBarFinished()
-        return t
+        with ProgressMonitor().task(100, 'Calculating statistics..') as monitor:
+            monitor.add_listener(self.callback)
+            if self.reference_corpus:
+                t = compare(self.corpus, self.reference_corpus, monitor=monitor)
+            else:
+                t = frequencies(self.corpus, monitor=monitor)
+            return t
 
     @calculate.on_result
     def on_result(self, result):
+        self.progressBarFinished()
         self.Outputs.statistics.send(result)
+
+    def callback(self, monitor):
+        self.progressBarSet(monitor.progress * 100)
+
+    def on_start(self):
+        self.progressBarInit()
 
     def go(self):
         if self.corpus is None:

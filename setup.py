@@ -34,7 +34,7 @@ DATA_FILES = [
 ]
 
 INSTALL_REQUIRES = [
-    'Orange3', 'orange3-text', 'whoosh', 'amcatclient>=3.4.10', 'progressmonitor>=0.5'
+    'Orange3', 'orange3-text', 'whoosh', 'amcatclient>=3.4.11', 'progressmonitor>=0.5'
 ]
 
 ENTRY_POINTS = {

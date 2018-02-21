@@ -1,6 +1,7 @@
 import numpy as np
 import re
 
+import progressmonitor
 from AnyQt.QtCore import Qt
 from AnyQt.QtGui import QIntValidator, QColor
 from AnyQt.QtWidgets import QApplication, QCheckBox
@@ -11,9 +12,9 @@ from Orange.widgets.widget import OWWidget, Input, Output, Msg
 from orangecontrib.text.corpus import Corpus
 from orangecontrib.text.widgets.utils.concurrent import asynchronous
 from orangecontrib.text.widgets.utils.widgets import ListEdit
+from progressmonitor import ProgressMonitor
 
 from orangecontrib.sma.index import get_index
-from orangecontrib.sma.progress import progress_monitor
 from orangecontrib.sma.widgets.OWDictionary import Dictionary
 
 
@@ -136,8 +137,8 @@ class OWQuerySearch(OWWidget):
         if self.dictionary_on and type(self.dictionary_text) is list:
             queries = queries + self.dictionary_text
 
-
-        with progress_monitor(self, 'status').task(100) as monitor:
+        with ProgressMonitor().task(100, 'Starting search..') as monitor:
+            monitor.add_listener(self.callback)
             index = get_index(self.corpus, monitor=monitor.submonitor(50))
 
             if QUERY_MODES[self.query_mode] == 'filter':
@@ -155,8 +156,6 @@ class OWQuerySearch(OWWidget):
                         sample._tokens[i] = context
                         selected.append(i)
                     sample = sample[selected]
-
-
                 o = np.ones(len(self.corpus))
                 o[selected] = 0
                 remaining = np.nonzero(o)[0]
@@ -186,10 +185,24 @@ class OWQuerySearch(OWWidget):
                     sample = sample[selected]
             return sample, remaining
 
+    @search.callback(should_raise=True)
+    def callback(self, monitor):
+        self.progressBarSet(monitor.progress * 100)
+        self.status = monitor.message
+
+    @search.on_start
+    def on_start(self):
+        self.progressBarInit()
+
     @search.on_result
     def on_result(self, result):
-        sample, remaining = result
-        self.info.setText('%d sampled instances' % len(result))
+        self.progressBarFinished()
+        if result:
+            sample, remaining = result
+            self.info.setText('%d sampled instances' % len(sample))
+        else:
+            sample, remaning = None, None
+            self.info.setText('(no input)')
         self.Outputs.sample.send(sample)
         self.Outputs.remaining.send(remaining)
 
