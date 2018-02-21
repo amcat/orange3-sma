@@ -51,10 +51,21 @@ class OWDictionary(OWWidget):
 
         #### header
         head_box = gui.hBox(self.controlArea)
-        head_box.setMaximumHeight(150)
+        head_box.setMaximumHeight(200)
         
         info_box = gui.widgetBox(head_box, 'Info')
-        self.info = gui.widgetLabel(info_box, 'Import and/or create queries.')
+        self.info = gui.widgetLabel(info_box,
+           ("Import and/or create queries\n\n" +
+            "If a Table with a dictionary is connected as input,\n" +
+            "it can be imported, in which case multiple query\n" +
+            "terms with the same label will be combined.\n\n" +
+            "If the label is a number, or if negative weights are\n" +
+            "used (e.g. sentiment dictionaries), the query will be\n" +
+            "split into positive and negative parts.\n\n"
+            "If a row in the dictionary contains multiple terms\n" +
+            "separated with spaces, it will be seen as a phrase\n" +
+            "(by adding quotes). This can be turned of in case\n" +
+            "rows are already boolean queries."))
 
         ## from input
         input_box = gui.widgetBox(head_box, "Create queries from dictionary file")
@@ -65,10 +76,11 @@ class OWDictionary(OWWidget):
         gui.button(input_box, self, 'use weight', self.weight_toggle, toggleButton=True, value='add_weight',
                    buttonType=QCheckBox)
         inputline_box = gui.hBox(input_box)
-        self.label_select = gui.listBox(inputline_box, self, 'label_in', labels='querytable_vars', box = 'Label column', callback=self.update_if_sync)
+        inputline_box.setMinimumHeight(70)
+        gui.listBox(inputline_box, self, 'label_in', labels='querytable_vars', box = 'Label column', callback=self.update_if_sync)
         gui.listBox(inputline_box, self, 'query_in', labels='querytable_vars', box = 'Query column', callback=self.update_if_sync)
         self.weight_select = gui.listBox(inputline_box, self, 'weight_in', labels='querytable_vars', box = 'Weight column', callback=self.update_if_sync)
-
+        self.weight_select.setVisible(self.add_weight)
 
         input_button_box = gui.hBox(input_box)
         gui.button(input_button_box, self, 'Keep synchronized', self.sync_on_off, toggleButton=True, value='sync', buttonType=QCheckBox)
@@ -209,7 +221,7 @@ class OWDictionary(OWWidget):
                 edit.setText(text)
 
     def sync_on_off(self):
-        valid_input = (self.label_in[0] is not None or self.weight_in[0] is not None) and self.query_in is not None
+        valid_input = self.query_in is not None
         if self.sync and valid_input:
             self.import_queries()
             self.sync = True ## ugly workaround around for unsetting sync with append_queries
@@ -234,11 +246,11 @@ class OWDictionary(OWWidget):
         query_col = self.querytable_vars[self.query_in[0]] if not self.query_in[0] is None else None
         weight_col = self.querytable_vars[self.weight_in[0]] if not self.weight_in[0] is None else None
 
-        if label_col is None: label_col = weight_col  ## special case where weight is sentiment score
-        if self.querytable is not None and label_col is not None and query_col is not None:
+        if self.querytable is not None and query_col is not None:
             add_queries = self.querytable.import_dictionary(label_col, query_col, weight_col, self.add_quotes,  self.add_weight)
             self.queries = self.queries + add_queries
             self.update_queries()
+        self.send_queries()
 
     @Inputs.data
     def set_data(self, data):
@@ -246,7 +258,7 @@ class OWDictionary(OWWidget):
             self.querytable = Dictionary(data)
             self.querytable_attr = self.querytable.attrnames()
             self.querytable_meta = self.querytable.metanames()
-            self.querytable_vars = self.querytable_attr + self.querytable_meta
+            self.querytable_vars = [None] + self.querytable_attr + self.querytable_meta
         else:
             self.querytable = None
             self.querytable_attr, self.querytable_metas, self.querytable_vars = [], [], []
@@ -278,8 +290,9 @@ class Dictionary(Orange.data.Table):
 
     def import_dictionary(self, label_col='label', query_col='query', weight_col='weight', add_quotes=True, add_weight=True):
         query = self.get_column(query_col)
-        label = self.get_column(label_col)
-        weight = self.get_column(weight_col) if weight_col is not None else [1] * len(label)
+        if label_col is None: label_col = weight_col  ## special case where weight is sentiment score
+        label = self.get_column(label_col) if label_col is not None else ["no label"] * len(query)
+        weight = self.get_column(weight_col) if weight_col is not None else [1] * len(query)
 
         qdict = {}
         for l, q, w in zip(label, query, weight):
@@ -294,7 +307,7 @@ class Dictionary(Orange.data.Table):
             if add_weight and is_float(w):
                 w = float(w)
                 if w < 0 and not l == 'negative':
-                    l = l + ' negative'
+                    l = l + ' (negative)'
                 q = q + '^' + str(abs(w))
             qdict[l] = q if not l in qdict.keys() else qdict[l] + ' OR ' + q
 
