@@ -135,7 +135,10 @@ class OWQuerySearch(OWWidget):
         indices = [0]
         queries = self.queries
         if self.dictionary_on and type(self.dictionary_text) is list:
-            queries = queries + self.dictionary_text
+            if type(queries) is list:  ## queries starts as str, but becomes list if queries are given (don't ask)
+                queries = queries + self.dictionary_text
+            else:
+                queries = self.dictionary_text
 
         with ProgressMonitor().task(100, 'Starting search..') as monitor:
             monitor.add_listener(self.callback)

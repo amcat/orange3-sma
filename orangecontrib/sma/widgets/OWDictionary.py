@@ -298,6 +298,7 @@ class Dictionary(Orange.data.Table):
 
         qdict = {}
         for l, q, w in zip(label, query, weight):
+            q = clean_query(q)
             if can_float(l):
                 l = 'positive' if float(l) > 0 else 'negative'
             if add_quotes:
@@ -311,7 +312,9 @@ class Dictionary(Orange.data.Table):
                 if not w == 1:
                     if w < 0 and not l == 'negative':
                         l = l + ' (negative)'
-                    q = q + '^' + str(abs(w))
+                    ## regex to add weight to (phrases wrapped in quotes) or (single terms except OR/AND/NOT)
+                    q = re.sub(r'(\"[^\"]*\")|([^ \(\)(OR)(AND)(NOT)]+)', r'\1\2^' + str(abs(w)), q)
+
             qdict[l] = q if not l in qdict.keys() else qdict[l] + ' OR ' + q
 
         return [[k, v] for k,v in qdict.items()]
@@ -323,6 +326,10 @@ def can_float(x):
         return(True)
     except ValueError:
         return(False)
+
+def clean_query(q):
+    q = re.sub('”|“', '"', q)
+    return q
 
 if __name__ == '__main__':
     app = QApplication([])
