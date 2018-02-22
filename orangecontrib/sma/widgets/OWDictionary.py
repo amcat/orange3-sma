@@ -21,11 +21,11 @@ class OWDictionary(OWWidget):
     querytable_attr = []
     querytable_metas = []
     querytable_vars = []
+    querytable_vars2 = []
     label_in = [None]
     query_in = [None]
     weight_in = [None]
     add_quotes = Setting(True)
-    add_weight = Setting(False)
     sync = Setting(False)
     send = Setting(False)
 
@@ -37,7 +37,7 @@ class OWDictionary(OWWidget):
         dictionary = Output("Dictionary", Orange.data.Table)
 
     class Error(OWWidget.Error):
-        no_query = Msg('Please provide a query.')
+        no_query = Msg('You need to select a query column to import, select or sync a dictionary.')
 
     def __init__(self):
         super().__init__()
@@ -73,14 +73,11 @@ class OWDictionary(OWWidget):
 
         gui.button(input_box, self, 'multiple words are phrases', toggleButton=True, value='add_quotes',
                    buttonType=QCheckBox)
-        gui.button(input_box, self, 'use weight', self.weight_toggle, toggleButton=True, value='add_weight',
-                   buttonType=QCheckBox)
         inputline_box = gui.hBox(input_box)
         inputline_box.setMinimumHeight(70)
-        gui.listBox(inputline_box, self, 'label_in', labels='querytable_vars', box = 'Label column', callback=self.update_if_sync)
         gui.listBox(inputline_box, self, 'query_in', labels='querytable_vars', box = 'Query column', callback=self.update_if_sync)
-        self.weight_select = gui.listBox(inputline_box, self, 'weight_in', labels='querytable_vars', box = 'Weight column', callback=self.update_if_sync)
-        self.weight_select.setVisible(self.add_weight)
+        gui.listBox(inputline_box, self, 'label_in', labels='querytable_vars2', box = 'Label column', callback=self.update_if_sync)
+        self.weight_select = gui.listBox(inputline_box, self, 'weight_in', labels='querytable_vars2', box = 'Weight column', callback=self.update_if_sync)
 
         input_button_box = gui.hBox(input_box)
         gui.button(input_button_box, self, 'Keep synchronized', self.sync_on_off, toggleButton=True, value='sync', buttonType=QCheckBox)
@@ -223,16 +220,15 @@ class OWDictionary(OWWidget):
     def sync_on_off(self):
         valid_input = self.query_in is not None
         if self.sync and valid_input:
+            self.Warning.no_query.clear()
             self.import_queries()
             self.sync = True ## ugly workaround around for unsetting sync with append_queries
             #self.send = True
             self.send_queries()
         else:
+            self.Error.no_query()
             #self.send=False
             self.sync = False ## disable synchronize if label_in or query_in are not specified
-
-    def weight_toggle(self):
-        self.weight_select.setVisible(self.add_weight)
 
 
     def import_queries(self):
@@ -242,14 +238,19 @@ class OWDictionary(OWWidget):
     def append_queries(self):
         self.sync = False
         self.send = False
-        label_col = self.querytable_vars[self.label_in[0]] if not self.label_in[0] is None else None
+        label_col = self.querytable_vars2[self.label_in[0]] if not self.label_in[0] is None else None
         query_col = self.querytable_vars[self.query_in[0]] if not self.query_in[0] is None else None
-        weight_col = self.querytable_vars[self.weight_in[0]] if not self.weight_in[0] is None else None
+        weight_col = self.querytable_vars2[self.weight_in[0]] if not self.weight_in[0] is None else None
+        if label_col == '[not used]': label_col = None
+        if weight_col == '[not used]': weight_col = None
 
         if self.querytable is not None and query_col is not None:
-            add_queries = self.querytable.import_dictionary(label_col, query_col, weight_col, self.add_quotes,  self.add_weight)
+            self.Error.no_query.clear()
+            add_queries = self.querytable.import_dictionary(label_col, query_col, weight_col, self.add_quotes)
             self.queries = self.queries + add_queries
             self.update_queries()
+        else:
+            self.Error.no_query()
         self.send_queries()
 
     @Inputs.data
@@ -258,10 +259,11 @@ class OWDictionary(OWWidget):
             self.querytable = Dictionary(data)
             self.querytable_attr = self.querytable.attrnames()
             self.querytable_meta = self.querytable.metanames()
-            self.querytable_vars = [None] + self.querytable_attr + self.querytable_meta
+            self.querytable_vars = self.querytable_attr + self.querytable_meta
+            self.querytable_vars2 = ['[not used]'] + self.querytable_vars
         else:
             self.querytable = None
-            self.querytable_attr, self.querytable_metas, self.querytable_vars = [], [], []
+            self.querytable_attr, self.querytable_metas, self.querytable_vars, self.querytable_vars2 = [], [], [], []
             self.label_in, self.query_in = [None], [None]
 
 
@@ -288,15 +290,15 @@ class Dictionary(Orange.data.Table):
         query = self.get_column(query_col)
         return [list(a) for a in zip(label,query)]
 
-    def import_dictionary(self, label_col='label', query_col='query', weight_col='weight', add_quotes=True, add_weight=True):
+    def import_dictionary(self, label_col='label', query_col='query', weight_col='weight', add_quotes=True):
         query = self.get_column(query_col)
-        if label_col is None: label_col = weight_col  ## special case where weight is sentiment score
+        #if label_col is None: label_col = weight_col  ## special case where weight is sentiment score
         label = self.get_column(label_col) if label_col is not None else ["no label"] * len(query)
         weight = self.get_column(weight_col) if weight_col is not None else [1] * len(query)
 
         qdict = {}
         for l, q, w in zip(label, query, weight):
-            if is_float(l):
+            if can_float(l):
                 l = 'positive' if float(l) > 0 else 'negative'
             if add_quotes:
                 if not '"' in q and len(q.split()) > 1:
@@ -304,17 +306,18 @@ class Dictionary(Orange.data.Table):
             else:
                 if len(q.split()) > 1:
                     q = '(' + q + ')'
-            if add_weight and is_float(w):
+            if can_float(w):
                 w = float(w)
-                if w < 0 and not l == 'negative':
-                    l = l + ' (negative)'
-                q = q + '^' + str(abs(w))
+                if not w == 1:
+                    if w < 0 and not l == 'negative':
+                        l = l + ' (negative)'
+                    q = q + '^' + str(abs(w))
             qdict[l] = q if not l in qdict.keys() else qdict[l] + ' OR ' + q
 
         return [[k, v] for k,v in qdict.items()]
 
 
-def is_float(x):
+def can_float(x):
     try:
         float(x)
         return(True)

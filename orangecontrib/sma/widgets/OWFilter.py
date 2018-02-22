@@ -142,8 +142,7 @@ class OWQuerySearch(OWWidget):
 
             if QUERY_MODES[self.query_mode] == 'filter':
                 # simple search
-                query = " OR ".join('({})'.format(q) for q in queries)
-
+                query = " OR ".join('({})'.format(parse_query(q)[1]) for q in queries)
                 if not self.context_window:
                     selected = list(index.search(query))
                     sample = self.corpus[selected]

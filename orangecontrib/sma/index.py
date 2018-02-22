@@ -41,16 +41,18 @@ class Index(object):
                 ## for some reason, using searcher.search counts all individual occurrences of the terms in a phrase ("term1 term2")
                 ## after the phrase occurs at least once. So for frequencies, we use this lengthy alternative
                 ## (I expect that somewhere a setting is hidden to simply fix this with searcher.search, but no clue yet)
-                results = defaultdict(lambda:0)
+                results = defaultdict(lambda:float(0))
                 queries = divide_query(query)
-                for q in queries:
+
+                for i, q in enumerate(queries):
                     q = QueryParser("text", self.index.schema).parse(q)
                     matcher = q.matcher(searcher)
-                    bd = boostdict(matcher)
+
                     while matcher.is_active():
                         docnum = searcher.reader().stored_fields(matcher.id())['doc_i']
+                        bd = boostdict(matcher)
                         for s in matcher.spans():
-                            results[docnum] += bd[s] if s in bd else float(1)
+                            results[docnum] += bd[s] if s in bd else 1
                         matcher.next()
                 return [(k,v) for k,v in results.items()]
             else:
@@ -116,8 +118,8 @@ def get_index(corpus: Corpus, monitor: ProgressMonitor, multiple_processors=True
 def divide_query(query):
     """
     divide query into parts connected by OR statements (that can be executed separately)
-    necessary because for long queries, whoosh uses an ArrayUnionMatcher which makes the
-    frequency calculation very complicated.
+    necessary because for long queries, whoosh uses an ArrayUnionMatcher which messes up
+    the frequency calculations
     """
     queries = ['']
     querylist = re.findall('\([^\)]*\)|\S+', query)
@@ -130,10 +132,12 @@ def divide_query(query):
             queries[-1] += q
     return queries
 
-def boostdict(m, bd={}):
+def boostdict(m, bd=None):
     """
     Get a dictionary with boost (i.e. weight) scores (dict values) for different spans (dict keys)
     """
+    if bd is None:
+        bd = {}
     if m.is_active():
         if hasattr(m, 'boost'):
             for s in m.spans():
@@ -144,7 +148,6 @@ def boostdict(m, bd={}):
             for child in m.children():
                 bd = boostdict(child, bd)
     return bd
-
 
 if __name__ == '__main__':
     from Orange import data

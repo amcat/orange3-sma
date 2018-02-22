@@ -209,7 +209,7 @@ class OWAmcat(OWWidget):
         self.Warning.search_failed.clear()
         columns = ['id', 'date', 'medium', 'headline', 'byline', 'section', 'text','creator']
         max_documents = int(self.max_documents) if not self.max_documents == '' else None
-        
+
         if not self.query and self.date_option == DATE_NONE:
             docs = self.api.get_articles(self.project, self.articleset, columns=columns, yield_pages=True)
         else:
