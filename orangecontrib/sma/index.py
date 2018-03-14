@@ -11,9 +11,7 @@ from whoosh.fields import *
 from whoosh.qparser.default import QueryParser
 from orangecontrib.text.corpus import Corpus
 
-
 _GLOBAL_LOCK = Lock()
-
 
 class Index(object):
     """Wrapper around a whoosh index"""
@@ -96,7 +94,7 @@ class Index(object):
 
 
 @monitored(100, "Indexing corpus")
-def get_index(corpus: Corpus, monitor: ProgressMonitor, multiple_processors=True, **kargs) -> Index:
+def get_index(corpus: Corpus, monitor: ProgressMonitor, multiple_processors=False, **kargs) -> Index:
     """
     Get the index for the provided corpus, reindexing (and tokenizing) if needed
     """
