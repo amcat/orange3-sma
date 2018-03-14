@@ -5,11 +5,12 @@ from dateutil import relativedelta
 from AnyQt.QtCore import Qt
 from AnyQt.QtWidgets import QApplication, QFormLayout, QLabel, QLineEdit, QGridLayout
 
+import Orange
 from Orange.widgets.settings import Setting
 from Orange.widgets.widget import OWWidget, Msg
 from Orange.widgets.credentials import CredentialManager
 from Orange.widgets import gui
-from Orange.widgets.widget import Output
+from Orange.widgets.widget import Input, Output
 
 from orangecontrib.text.corpus import Corpus
 from orangecontrib.sma.facebook_orange_api import FacebookCredentials, FacebookOrangeAPI
@@ -96,7 +97,6 @@ class OWFacebook(OWWidget):
             self.token_input = self.app_id_input + '|' + self.app_secret_input
             self.accept()
 
-         
         def temp_accept(self):
             self.token_input = self.temp_token_input
             self.accept()
@@ -117,8 +117,12 @@ class OWFacebook(OWWidget):
     icon = 'icons/facebook-logo.svg'
     priority = 10
 
+    class Inputs:
+        input_posts = Input('Facebook Posts', Orange.data.Table)
+
     class Outputs:
-        corpus = Output("Corpus", Corpus)
+        posts = Output("Posts Corpus", Corpus)
+        comments = Output("Comments Corpus", Corpus)
 
     want_main_area = False
     resizing_enabled = False
@@ -126,8 +130,11 @@ class OWFacebook(OWWidget):
     page_ids = Setting([])
     modes = ['posts','feed']
     mode = Setting(0)
+    comments = Setting(0)
     accumulate = Setting(0)
     max_documents = Setting('')
+
+    input_corpus = None
 
     date_option = Setting(0)
     date_from = Setting(date(1900, 1, 1))
@@ -157,30 +164,34 @@ class OWFacebook(OWWidget):
                    focusPolicy=Qt.NoFocus)
 
         # Query
-        query_box = gui.widgetBox(self.controlArea, 'Query', addSpace=True)
-        gui.label(query_box, self, 'Page IDs (or page URLs)')
-        query_box.layout().addWidget(ListEdit(self, 'page_ids',
+        self.query_box = gui.widgetBox(self.controlArea, 'Posts', addSpace=True)
+        gui.label(self.query_box, self, 'Page IDs (or page URLs)')
+        self.query_box.layout().addWidget(ListEdit(self, 'page_ids',
                          'One page ID per line', 80, self))
 
         def date_changed():
             d.picker_to.setVisible(self.date_option in [DATE_BETWEEN])
             d.picker_from.setVisible(self.date_option in [DATE_FROM, DATE_BETWEEN])
-        gui.comboBox(query_box, self, 'date_option', items=DATE_OPTIONS, label="Date filter",
+        gui.comboBox(self.query_box, self, 'date_option', items=DATE_OPTIONS, label="Date filter",
                      callback = date_changed)
-        date_box = gui.hBox(query_box)
+        date_box = gui.hBox(self.query_box)
         d = DatePickerInterval(date_box, self, 'date_from', 'date_to',
                                min_date=None, max_date=date.today(),
                                margin=(0, 3, 0, 0))
         date_changed()
 
-        mode_box = gui.widgetBox(self.controlArea, box=True)
-        mode_box_h = gui.hBox(mode_box)
-        gui.radioButtonsInBox(mode_box_h, self, 'mode', btnLabels=['only posts from page itself', 'all public posts on page'], orientation=2, label='Mode:')
-        #gui.radioButtonsInBox(mode_box_h, self, 'accumulate', btnLabels=['new results', 'add to previous results'], orientation=2, label='On search:')
+        self.mode_box = gui.widgetBox(self.query_box, box=True)
+        mode_box_h = gui.hBox(self.mode_box)
+        gui.radioButtonsInBox(mode_box_h, self, 'mode', btnLabels=['only posts from page itself', 'all public posts on page'], orientation=2)
+        # gui.radioButtonsInBox(mode_box_h, self, 'accumulate', btnLabels=['new results', 'add to previous results'], orientation=2, label='On search:')
         gui.lineEdit(mode_box_h, self, 'max_documents', label='Max docs per page:', valueType=str, controlWidth=50)
 
+        comments_box = gui.widgetBox(self.controlArea, box='Comments')
+        gui.radioButtonsInBox(comments_box, self, 'comments', btnLabels=['ignore', 'direct comments', 'all comments'], orientation=2)
+
+
         # Text includes features
-        self.controlArea.layout().addWidget(
+        self.query_box.layout().addWidget(
             CheckListLayout('Text includes', self, 'text_includes',
                             self.attributes,
                             cols=2, callback=self.set_text_features))
@@ -229,7 +240,6 @@ class OWFacebook(OWWidget):
     @asynchronous
     def search(self):
         mode = self.modes[self.mode]
-        accumulate = self.accumulate == 1
         max_documents = int(self.max_documents) if not self.max_documents == '' else None
         
         self.date_to = datetime.now().date()
@@ -244,7 +254,29 @@ class OWFacebook(OWWidget):
         if self.date_option in [DATE_BETWEEN]:
             self.date_to = self.date_to 
 
-        return self.api.search(self.page_ids, mode, self.date_from, self.date_to, max_documents=max_documents, accumulate=accumulate)
+        get_comments = self.comments > 0
+        get_comment_replies = self.comments > 1
+        posts_sub_progress = (0, 0.5) if get_comments else (0, 1)
+
+        if self.input_corpus is None:
+            posts = self.api.search(self.page_ids, mode, self.date_from, self.date_to, max_documents=max_documents,
+                                    sub_progress=posts_sub_progress)
+        else:
+            colnames = [x.name for x in self.input_corpus.domain.metas]
+            if not 'Post ID' in colnames: return (None, None)
+            col_i = colnames.index('Post ID')
+            post_ids = list(set(self.input_corpus.metas[:, col_i]))
+            posts = self.api.search_posts(post_ids, sub_progress=posts_sub_progress)
+
+        if get_comments:
+            colnames = [x.name for x in posts.domain.metas]
+            if not 'Post ID' in colnames: return (None, None)
+            col_i = colnames.index('Post ID')
+            post_ids = list(set(posts.metas[:, col_i]))
+            comments = self.api.getComments(post_ids, get_comment_replies, sub_progress=(0.5,1))
+        else:
+            comments = None
+        return (posts, comments)
 
     @search.callback(should_raise=False)
     def progress_with_info(self, n_retrieved, n_all):
@@ -253,16 +285,19 @@ class OWFacebook(OWWidget):
 
     @search.on_start
     def on_start(self):
-        self.progressBarInit(None)
+        self.progressBarInit()
         self.search_button.setText('Stop')
-        self.Outputs.corpus.send(None)
+        self.Outputs.posts.send(None)
+        self.Outputs.comments.send(None)
 
     @search.on_result
     def on_result(self, result):
         self.search_button.setText('Search')
         self.progressBarFinished(None)
-        self.corpus = result
+        self.corpus = result[0]
+        self.comments_corpus = result[1]
         self.set_text_features()
+
 
     def set_text_features(self):
         self.Warning.no_text_fields.clear()
@@ -272,7 +307,9 @@ class OWFacebook(OWWidget):
         if self.corpus is not None:
             vars_ = [var for var in self.corpus.domain.metas if var.name in self.text_includes]
             self.corpus.set_text_features(vars_ or None)
-            self.Outputs.corpus.send(self.corpus)
+            self.Outputs.posts.send(self.corpus)
+        if self.comments_corpus is not None:
+            self.Outputs.comments.send(self.comments_corpus)
 
     def send_report(self):
         self.report_items([
@@ -282,6 +319,17 @@ class OWFacebook(OWWidget):
             ('Text includes', ', '.join(self.text_includes)),
             ('Output', self.output_info or 'Nothing'),
         ])
+
+    @Inputs.input_posts
+    def set_data(self, input_posts):
+        if input_posts is not None:
+            self.input_corpus = input_posts
+            self.query_box.setVisible(False)
+            self.mode_box.setVisible(False)
+        else:
+            self.input_corpus = None
+            self.query_box.setVisible(True)
+            self.mode_box.setVisible(True)
 
 
 if __name__ == '__main__':

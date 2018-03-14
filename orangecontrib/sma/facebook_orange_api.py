@@ -8,6 +8,11 @@ from orangecontrib.text.corpus import Corpus
 
 BASE_URL = 'https://graph.facebook.com'
 
+def progress_scale(x, subprogress):
+    start = subprogress[0]
+    end = subprogress[1]
+    return math.ceil((start*100) + (x * (end - start)))
+
 class FacebookCredentials:
     """ The Facebook API credentials. """
     def __init__(self, token = ''):
@@ -26,24 +31,24 @@ class FacebookOrangeAPI():
     image_var = data.StringVariable.make("image")
     image_var.attributes["type"] = "image"
     post_metas = [(data.StringVariable('Message'), lambda doc: doc['status_message']),
-             (data.StringVariable('From'), lambda doc: doc['from_name']),
-             (data.StringVariable('likes'), lambda doc: doc['like']),
-             (data.StringVariable('comments'), lambda doc: doc['comments']),
-             (data.StringVariable('shares'), lambda doc: doc['shares']),
-             (data.StringVariable('top emotion'), lambda doc: doc['top_reaction']),
+             (data.DiscreteVariable('From'), lambda doc: doc['from_name']),
+             (data.ContinuousVariable('likes'), lambda doc: doc['like']),
+             (data.ContinuousVariable('comments'), lambda doc: doc['comments']),
+             (data.ContinuousVariable('shares'), lambda doc: doc['shares']),
+             (data.DiscreteVariable('top emotion'), lambda doc: doc['top_reaction']),
              (data.StringVariable('Link name'), lambda doc: doc['link_name']),
              (image_var, lambda doc: doc['picture']),
              (data.StringVariable('link'), lambda doc: doc['status_link']),
-             (data.StringVariable('From ID'), lambda doc: doc['from_id']),
-             (data.StringVariable('Status ID'), lambda doc: doc['status_id']),
-             (data.StringVariable('Status type'), lambda doc: doc['status_type']),
+             (data.DiscreteVariable('From ID'), lambda doc: doc['from_id']),
+             (data.StringVariable('Post ID'), lambda doc: doc['status_id']),
+             (data.DiscreteVariable('Post type'), lambda doc: doc['status_type']),
              (data.TimeVariable('Publication Date'), lambda doc: doc['status_published']),
              (data.TimeVariable('Publication Date UTC'), lambda doc: doc['status_published_utc']),
-             (data.StringVariable('emotion angry'), lambda doc: doc['angry']),
-             (data.StringVariable('emotion love'), lambda doc: doc['love']),
-             (data.StringVariable('emotion haha'), lambda doc: doc['haha']),
-             (data.StringVariable('emotion wow'), lambda doc: doc['wow']),
-             (data.StringVariable('emotion sad'), lambda doc: doc['sad'])]
+             (data.ContinuousVariable('emotion angry'), lambda doc: doc['angry']),
+             (data.ContinuousVariable('emotion love'), lambda doc: doc['love']),
+             (data.ContinuousVariable('emotion haha'), lambda doc: doc['haha']),
+             (data.ContinuousVariable('emotion wow'), lambda doc: doc['wow']),
+             (data.ContinuousVariable('emotion sad'), lambda doc: doc['sad'])]
     text_features = [post_metas[0][0]]
     title_indices = [-1]
 
@@ -53,7 +58,6 @@ class FacebookOrangeAPI():
         self.credentials = credentials
         self.on_progress = on_progress or (lambda x, y: None)
         self.should_break = should_break or (lambda: False)
-        self.results = []
 
     def buildUrl(self, node, version='v2.11'):
         return BASE_URL + '/' + version + '/' + node  
@@ -78,19 +82,21 @@ class FacebookOrangeAPI():
 
     def utcToLocal(self, date):
         return date - self.utc_datecor
- 
+
+    def processDate(self, created_time):
+        return datetime.strptime(created_time,'%Y-%m-%dT%H:%M:%S+0000')
+
     def processStatus(self, status, engagement=True):
         d = {}
         d['status_id'] = status['id']      
-        d['from_id'] = status['from']['id']
-        d['from_name'] = status['from']['name']        
+        d['from_id'] = status['from']['id'] if 'from' in status.keys() else ''
+        d['from_name'] = status['from']['name'] if 'from' in status.keys() else ''
         d['status_message'] = '' if 'message' not in status.keys() else status['message']
         d['status_type'] = status['type']
         d['link_name'] = '' if 'name' not in status.keys() else status['name']        
 
-        status_published = datetime.strptime(status['created_time'],'%Y-%m-%dT%H:%M:%S+0000')
-        d['status_published_utc'] = status_published
-        d['status_published'] = self.utcToLocal(status_published)
+        d['status_published_utc'] = self.processDate(status['created_time'])
+        d['status_published'] = self.utcToLocal(d['status_published_utc'])
         d['status_link'] = '' if 'link' not in status.keys() else status['link']
         d['picture'] = status['full_picture'] if 'full_picture' in status.keys() else ''
 
@@ -111,8 +117,8 @@ class FacebookOrangeAPI():
                 d[score] = ''
                 d['top_reaction'] = ''
 
-        return d  
-                               
+        return d
+
     def fieldString(self, engagement=True):
         field_string = 'message,from,link,created_time,type,name,id,full_picture'
         
@@ -144,10 +150,7 @@ class FacebookOrangeAPI():
             if not 'next' in statuses['paging'].keys(): break
             url = statuses['paging']['next']
 
-    def getComments(self, post_ids):
-        None
-
-    def _search(self, page_ids, mode, since, until, max_documents):
+    def _search(self, page_ids, mode, since, until, max_documents, sub_progress=(0,1)):
         since = since.strftime('%Y-%m-%d')
         until = until.strftime('%Y-%m-%d')
         since = datetime.strptime(since, '%Y-%m-%d')
@@ -170,7 +173,7 @@ class FacebookOrangeAPI():
                 sec_to_go = (until - earliest_date).total_seconds()
                 date_progress = ((sec_to_go / total_sec) * progress_pct)
                 progress = math.ceil((page_progress + date_progress)*100)
-                self.on_progress(progress, 100)
+                self.on_progress(progress_scale(progress, sub_progress), 100)
                 for doc in d:
                     n += 1
                     if max_documents is not None:
@@ -180,20 +183,128 @@ class FacebookOrangeAPI():
                 if max_documents is not None:
                     if n > max_documents:
                         break
-        self.on_progress(100, 100)
+        self.on_progress(progress_scale(100, sub_progress), 100)
 
-    def search(self, page_ids, mode='posts', since= datetime.now() - timedelta(10), until=datetime.now(), max_documents=None, accumulate=False):
-        if not accumulate:
-            self.results = []
-        
-        for doc in self._search(page_ids, mode, since, until, max_documents):
+    def search(self, page_ids, mode='posts', since= datetime.now() - timedelta(10), until=datetime.now(), max_documents=None, sub_progress=(0,1)):
+        results = []
+        for doc in self._search(page_ids, mode, since, until, max_documents, sub_progress):
             doc['status_published'] = doc['status_published'].strftime('%Y-%m-%dT%H:%M:%S')
             doc['status_published_utc'] = doc['status_published_utc'].strftime('%Y-%m-%dT%H:%M:%S')
-            self.results.append(doc)
+            results.append(doc)
              
-        c = Corpus.from_documents(self.results, 'Facebook', self.attributes, self.class_vars, self.post_metas, self.title_indices)
+        c = Corpus.from_documents(results, 'Facebook', self.attributes, self.class_vars, self.post_metas, self.title_indices)
         c.set_text_features(self.text_features)
         return c
+
+
+
+    def _search_posts(self, post_ids, sub_progress=(0,1), engagement=True):
+        for i, post_id in enumerate(post_ids):
+            node = post_id
+            url = self.buildUrl(node)
+
+            params = {}
+            params['fields'] = self.fieldString(engagement)
+            params['limit'] = 100
+
+            status = self.getData(url, params=params)
+            status = self.processStatus(status)
+            yield status
+
+            progress = ((i+1) / len(post_ids)) * 100
+            self.on_progress(progress_scale(progress, sub_progress), 100)
+        self.on_progress(progress_scale(100, sub_progress), 100)
+
+
+    def search_posts(self, post_ids, sub_progress=(0,1)):
+        results = []
+        for doc in self._search_posts(post_ids, sub_progress):
+            doc['status_published'] = doc['status_published'].strftime('%Y-%m-%dT%H:%M:%S')
+            doc['status_published_utc'] = doc['status_published_utc'].strftime('%Y-%m-%dT%H:%M:%S')
+            results.append(doc)
+
+        c = Corpus.from_documents(results, 'Facebook', self.attributes, self.class_vars, self.post_metas, self.title_indices)
+        c.set_text_features(self.text_features)
+        return c
+
+
+
+    def processComment(self, comment):
+        has_comment_replies = 'comments' in comment.keys()
+        parent = {'type': 'comment', 'comment_id': comment['id'], 'likes': comment['like']['summary']['total_count'],
+                  'comment_replies': None, 'message': comment['message'], 'parent_comment_id': ''}
+        parent['status_published_utc'] = self.processDate(comment['created_time'])
+        parent['status_published'] = self.utcToLocal(parent['status_published_utc'])
+        if has_comment_replies: parent['comment_replies'] = comment['comments']['summary']['total_count']
+        yield parent
+
+        if has_comment_replies:
+            comment_replies = comment['comments']
+            while True:
+                for cr in comment_replies['data']:
+                    child = {'type': 'comment_reply', 'comment_id': comment['id'], 'likes': cr['like']['summary']['total_count'],
+                            'message': cr['message'], 'parent_comment_id': cr['id'], 'comment_replies': None}
+                    child['status_published_utc'] = self.processDate(cr['created_time'])
+                    child['status_published'] = self.utcToLocal(child['status_published_utc'])
+                    yield child
+
+                if not 'paging' in comment_replies.keys(): break
+                if not 'next' in comment_replies['paging'].keys(): break
+                url = comment_replies['paging']['next']
+                comment_replies = self.getData(url)
+
+    def _getComments(self, post_ids, comment_replies=True, sub_progress=(0,1)):
+        for i, post_id in enumerate(post_ids):
+            node = post_id + '/comments'
+            url = self.buildUrl(node)
+
+            params = {}
+            params['fields'] = 'message,created_time,reactions.type(LIKE).summary(true).as(like)'
+            if comment_replies: params['fields'] += ',comments.summary(true){message,created_time,reactions.type(LIKE).summary(true).as(like)}'
+            params['limit'] = 100
+
+            while True:
+                comments = self.getData(url, params=params)
+                if len(comments['data']) == 0: break
+
+                for comment in comments['data']:
+                    for proc_comment in self.processComment(comment):
+                        proc_comment['post_id'] = post_id
+                        yield proc_comment
+
+                if not 'paging' in comments.keys(): break
+                if not 'next' in comments['paging'].keys(): break
+                url = comments['paging']['next']
+            progress = ((i+1) / len(post_ids)) * 100
+            self.on_progress(progress_scale(progress, sub_progress), 100)
+        self.on_progress(progress_scale(100, sub_progress), 100)
+
+
+    def getComments(self, post_ids, comment_replies=True, sub_progress=(0,1)):
+        attributes = []
+        class_vars = []
+        metas = [(data.StringVariable('Message'), lambda doc: doc['message']),
+                 (data.DiscreteVariable('Type'), lambda doc: doc['type']),
+                 (data.StringVariable('Post ID'), lambda doc: doc['post_id']),
+                 (data.StringVariable('Comment ID'), lambda doc: doc['comment_id']),
+                 (data.StringVariable('Parent comment ID'), lambda doc: doc['parent_comment_id']),
+                 (data.ContinuousVariable('likes'), lambda doc: doc['likes']),
+                 (data.ContinuousVariable('comment replies'), lambda doc: doc['comment_replies']),
+                 (data.TimeVariable('Publication Date'), lambda doc: doc['status_published']),
+                 (data.TimeVariable('Publication Date UTC'), lambda doc: doc['status_published_utc'])]
+        text_features = [metas[0][0]]
+        title_indices = [-1]
+
+        results = []
+        for doc in self._getComments(post_ids, comment_replies, sub_progress):
+            doc['status_published'] = doc['status_published'].strftime('%Y-%m-%dT%H:%M:%S')
+            doc['status_published_utc'] = doc['status_published_utc'].strftime('%Y-%m-%dT%H:%M:%S')
+            results.append(doc)
+
+        c = Corpus.from_documents(results, 'Facebook comments', attributes, class_vars, metas, title_indices)
+        c.set_text_features(text_features)
+        return c
+
 
 #if __name__ == '__main__':
 #    access_token  = ''
