@@ -1,6 +1,5 @@
 from collections import OrderedDict
-from typing import Mapping
-
+from typing import Mapping, Tuple
 
 import numpy as np
 from Orange.data.domain import Domain
@@ -13,7 +12,7 @@ from orangecontrib.text.widgets.utils.concurrent import asynchronous
 from progressmonitor import monitored, ProgressMonitor
 
 from orangecontrib.text import Corpus
-from orangecontrib.sma.index import get_index
+
 
 def _create_table(words, scores: Mapping[str, np.array]) -> Table:
     """
@@ -32,27 +31,40 @@ def _create_table(words, scores: Mapping[str, np.array]) -> Table:
 
 
 @monitored(100)
+def get_counts(corpus: Corpus, monitor: ProgressMonitor) -> Tuple[Mapping[str, int], Mapping[str, int]]:
+    monitor.update(0, "Getting tokens")
+    tokens = corpus.tokens  # forces tokens to be created
+    n = len(tokens)
+    tf, df = {}, {}  # tf: {word : freq}, df: {word: {doc_i, ...}}
+    monitor.update(50, "Counting words")
+    with monitor.subtask(50) as sm:
+        sm.begin(n)
+        for i, doc_tokens in enumerate(tokens):
+            sm.update(message="Counting words {i}/{n}".format(**locals()))
+            for t in doc_tokens:
+                df.setdefault(t, set()).add(i)
+                tf[t] = tf.get(t, 0) + 1
+        df = {w: len(df[w]) for w in df}
+        return tf, df
+
+
+def _relfreq(c):
+    c2 = c+1
+    return c2/c2.sum()
+
+
+@monitored(100)
 def compare(corpus: Corpus, reference_corpus: Corpus, monitor: ProgressMonitor):
-    index = get_index(corpus, monitor=monitor.submonitor(33))
-    ref_index = get_index(reference_corpus, monitor=monitor.submonitor(33))
+    tf1, df1 = get_counts(corpus, monitor.submonitor(40))
+    tf2, df2 = get_counts(reference_corpus, monitor.submonitor(40))
 
-    with index.reader() as r, ref_index.reader() as r2:
-        words = list(set(r.field_terms("text")) | set(r2.field_terms("text")))
-        n = len(words)
-        N = len(list(r.all_doc_ids()))  # TODO more efficient way?
-        counts, docfreqs, refcounts, refdocfreqs = [np.empty(n) for _ in range(4)]
-        for i, word in enumerate(words):
-            counts[i] = r.frequency('text', word)
-            docfreqs[i] = r.doc_frequency('text', word)
-            refcounts[i] = r2.frequency('text', word)
-            refdocfreqs[i] = r2.doc_frequency('text', word)
-    monitor.update(20)
+    words = list(set(df1.keys()) | set(df2.keys()))
+    counts = np.fromiter((tf1.get(t, 0) for t in words), int)
+    docfreqs = np.fromiter((df1.get(t, 0) for t in words), int)
+    refcounts = np.fromiter((tf2.get(t, 0) for t in words), int)
+    refdocfreqs = np.fromiter((df2.get(t, 0) for t in words), int)
 
-    def relfreq(c):
-        c2 = c+1
-        return c2/c2.sum()
-
-    relc, relcr = relfreq(counts), relfreq(refcounts)
+    relc, relcr = _relfreq(counts), _relfreq(refcounts)
     over = relc / relcr
     return _create_table(words, OrderedDict([
             ("overrepresentation", over),
@@ -67,21 +79,13 @@ def compare(corpus: Corpus, reference_corpus: Corpus, monitor: ProgressMonitor):
 
 @monitored(100)
 def frequencies(corpus, monitor):
-    index = get_index(corpus, monitor.submonitor(50))
+    tf, df = get_counts(corpus, monitor.submonitor(90))
 
-    for i in range(25):
-        monitor.update()
-        import time; time.sleep(.1)
+    words = list(tf.keys())
+    counts = np.fromiter((tf.get(t, 0) for t in words), int)
+    docfreqs = np.fromiter((df.get(t, 0) for t in words), int)
+    reldocfreqs = _relfreq(counts)
 
-    with index.reader() as r:
-        words = list(r.field_terms("text"))
-        n = len(words)
-        N = len(list(r.all_doc_ids()))  # TODO more efficient way?
-        counts, docfreqs, reldocfreqs = [np.empty(n) for _ in range(3)]
-        for i, word in enumerate(words):
-            counts[i] = r.frequency('text', word)
-            docfreqs[i] = r.doc_frequency('text', word)
-            reldocfreqs[i] = docfreqs[i] / N
     monitor.update(10)
     return _create_table(words, OrderedDict([
         ("frequency", counts),
@@ -128,14 +132,22 @@ class OWCorpusStatistics(OWWidget):
                 t = frequencies(self.corpus, monitor=monitor)
             return t
 
+
     @calculate.on_result
     def on_result(self, result):
         self.progressBarFinished()
         self.Outputs.statistics.send(result)
 
+    @calculate.callback(should_raise=True)
     def callback(self, monitor):
         self.progressBarSet(monitor.progress * 100)
 
+    @calculate.callback(should_raise=True)
+    def progress_with_info(self, n, total):
+        self.output_info = '{n}/{total}'.format(**locals())
+        self.progressBarSet(100 * (n / total if total else 1), None)  # prevent division by 0
+
+    @calculate.on_start
     def on_start(self):
         self.progressBarInit()
 
