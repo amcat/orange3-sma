@@ -67,13 +67,13 @@ def compare(corpus: Corpus, reference_corpus: Corpus, monitor: ProgressMonitor):
     relc, relcr = _relfreq(counts), _relfreq(refcounts)
     over = relc / relcr
     return _create_table(words, OrderedDict([
-            ("overrepresentation", over),
             ("percent", relc),
             ("frequency", counts),
             ("docfreq", docfreqs),
-            ("ref_percent", relcr),
-            ("ref_frequency", refcounts),
-            ("ref_docfreq", refdocfreqs),
+            ("overrepresentation", over),
+            ("reference_percent", relcr),
+            ("reference_frequency", refcounts),
+            ("reference_docfreq", refdocfreqs),
        ]))
 
 
