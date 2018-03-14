@@ -229,7 +229,7 @@ class OWFacebook(OWWidget):
 
     @gui_require('api', 'no_api')
     def run_search(self):
-        if len(self.page_ids) == 0:
+        if len(self.page_ids) == 0 and self.input_corpus is None:
             self.Error.no_page_id()
             return
         else:
