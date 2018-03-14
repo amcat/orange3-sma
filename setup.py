@@ -7,7 +7,7 @@ from setuptools import setup, find_packages
 
 NAME = "Orange3-sma"
 
-VERSION = "0.2.22"
+VERSION = "0.2.30"
 
 DESCRIPTION = "Provides widgets for social media analytics"
 README_FILE = path.join(path.dirname(__file__), 'README.md')
